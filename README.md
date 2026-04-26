@@ -1,1 +1,0 @@
-# Sermon-editor-UI
