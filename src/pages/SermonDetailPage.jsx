@@ -135,6 +135,7 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
 }
 
 function ClipCard({ clip }) {
+  const hasVideo = !!clip.rendered_video_url
   return (
     <div style={{
       border: '1px solid var(--border)', borderRadius: 10,
@@ -152,6 +153,31 @@ function ClipCard({ clip }) {
         <span style={{ flex: 1 }} />
         <Badge status={clip.strength?.toLowerCase()} />
       </div>
+
+      {hasVideo && (
+        <div style={{
+          background: '#000', display: 'flex', justifyContent: 'center',
+          padding: 0,
+        }}>
+          <video
+            src={clip.rendered_video_url}
+            controls
+            preload="metadata"
+            style={{ maxHeight: 480, maxWidth: '100%', display: 'block' }}
+          />
+        </div>
+      )}
+
+      {clip.render_error && !hasVideo && (
+        <div style={{
+          padding: '10px 1rem', fontSize: 12,
+          color: 'var(--red-text)', background: 'var(--red-bg)',
+          borderBottom: '1px solid var(--border)',
+        }}>
+          <strong>Render failed:</strong> {clip.render_error}
+        </div>
+      )}
+
       <div style={{ padding: '1rem' }}>
         {clip.transcript && (
           <p style={{
