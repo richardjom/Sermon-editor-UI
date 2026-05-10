@@ -15,7 +15,8 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
   const [pipeline, setPipeline] = useState('video') // 'video' | 'audio'
   const [vertical, setVertical] = useState(false)
   const [faceTracking, setFaceTracking] = useState(true)
-  const [cropLowerThird, setCropLowerThird] = useState(false)
+  // crop_lower_third on the API is tristate: null/omitted=auto, true=on, false=off
+  const [cropLowerThird, setCropLowerThird] = useState('auto') // 'auto' | 'on' | 'off'
 
   React.useEffect(() => {
     if (clients.length) setClientId(clients[0].id)
@@ -45,7 +46,11 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
           vertical,
           // Only send vertical-dependent flags if vertical is on
           ...(vertical && { face_tracking: faceTracking }),
-          ...(vertical && { crop_lower_third: cropLowerThird }),
+          // For crop_lower_third: 'auto' → omit so the backend
+          // auto-detects; 'on' → true; 'off' → false.
+          ...(vertical && cropLowerThird !== 'auto' && {
+            crop_lower_third: cropLowerThird === 'on',
+          }),
         }
         result = await submitSermonVideo({
           client_id: clientId, sermon_title: title, sermon_date: date,
@@ -148,12 +153,21 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
                 label="Follow speaker with AI"
                 hint="Uses face tracking to keep the speaker centered. Off = static center crop."
               />
-              <Toggle
-                checked={cropLowerThird}
-                onChange={setCropLowerThird}
-                label="Crop lower third"
-                hint="Drop the bottom 30% before reframing. Use if the source has a banner/text overlay."
-              />
+              <div style={{ display: 'grid', gap: 4 }}>
+                <div style={{ fontSize: 13, color: 'var(--text)' }}>Crop lower third</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                  Drop the bottom 30% before reframing if the source has a banner/text overlay.
+                </div>
+                <SegmentedRadio
+                  value={cropLowerThird}
+                  onChange={setCropLowerThird}
+                  options={[
+                    { value: 'auto', label: 'Auto', hint: 'Detect overlays in the source' },
+                    { value: 'on', label: 'On', hint: 'Always crop' },
+                    { value: 'off', label: 'Off', hint: 'Never crop' },
+                  ]}
+                />
+              </div>
             </div>
           </div>
         </FormGroup>
@@ -230,5 +244,46 @@ function Toggle({ checked, onChange, label, hint }) {
         {hint && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{hint}</div>}
       </div>
     </label>
+  )
+}
+
+function SegmentedRadio({ value, onChange, options }) {
+  return (
+    <div
+      role="radiogroup"
+      style={{
+        display: 'inline-flex',
+        border: '1px solid var(--border-mid)',
+        borderRadius: 8, overflow: 'hidden',
+        background: 'var(--surface)',
+        marginTop: 4,
+      }}
+    >
+      {options.map((opt, i) => {
+        const selected = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            title={opt.hint}
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: '6px 14px',
+              fontSize: 12, fontWeight: 500,
+              border: 'none',
+              borderLeft: i === 0 ? 'none' : '1px solid var(--border-mid)',
+              background: selected ? 'var(--text)' : 'transparent',
+              color: selected ? '#fff' : 'var(--text-2)',
+              cursor: 'pointer',
+              transition: 'background 0.12s, color 0.12s',
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
