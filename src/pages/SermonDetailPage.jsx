@@ -1,34 +1,97 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Badge, Btn, Spinner, EmptyState } from '../components/ui.jsx'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Icon } from '../components/Icon.jsx'
+import { Spinner, EmptyState } from '../components/ui.jsx'
 import { getSermon, reprocessSermon } from '../api.js'
 
 /* ============================================================================
- * Sermon detail page
+ * Sermon detail page — "Brief" design.
  *
- * Layout: split view with the sermon's source content on the left and the
- * generated clips on the right.
+ * Two-column layout. Top bar across both. Left column owns the source viewing
+ * experience (custom video player + clip-map strip + Overview/Transcript/
+ * Render-settings tabs). Right column owns clip management (search, filters,
+ * sort, accordion). The right rail is where features grow; the left rarely
+ * changes.
  *
- *   ┌─────────────────────────────────────┬─────────────────────────────┐
- *   │ Header (back, title, status)                                      │
- *   ├─────────────────────────────────────┼─────────────────────────────┤
- *   │ Source video player                 │ Bulk action bar             │
- *   │                                     │                             │
- *   │ Tabs: Overview | Transcript         │ Clip cards (vertical list)  │
- *   │ Tab content                         │                             │
- *   └─────────────────────────────────────┴─────────────────────────────┘
+ * The visual treatment uses a warm editorial palette + Fraunces serif for
+ * headlines + Geist Mono for timecodes + Inter for chrome. The rest of the
+ * app keeps its existing palette for now — this page is intentionally
+ * scoped.
  *
- * The right sidebar is meant to grow over time as we add new output types
- * (social posts, discussion guides, etc.). Today it's just clips. The left
- * panel rarely changes — it's a context viewer for "what is this sermon".
+ * Mapping our API to the prototype shape:
+ *   sermon.title             → title in top bar
+ *   sermon.sermon_date       → meta line
+ *   sermon.duration_seconds  → meta line "41m 8s"
+ *   sermon.source_video_url  → <video src=...>
+ *   sermon.transcript        → Transcript tab
+ *   sermon.render_options    → Render settings tab
+ *   clip.suggested_hook      → clip title (the editorial headline)
+ *   clip.transcript          → expanded clip blockquote
+ *   clip.start_timestamp     → parsed → inSec
+ *   clip.end_timestamp       → parsed → outSec
+ *   clip.strength            → "High" / "Medium"
+ *   clip.rendered_video_url  → Download button + auto-play in main player
+ *
+ * Deferred to v2 (UI present but disabled / shows TODO):
+ *   - Trim (needs render-on-demand endpoint)
+ *   - Share (no spec yet)
+ *   - Manual clip creation from transcript or timeline
+ *   - Multi-format chips (we currently render one format per clip)
+ * ========================================================================== */
+
+const colors = {
+  bg: '#f6f3ec',
+  card: '#fbf9f3',
+  ink: '#1f1a14',
+  body: '#3a322a',
+  dim: '#867a6b',
+  muted: '#a89d8c',
+  line: 'rgba(40,30,20,.08)',
+  line2: 'rgba(40,30,20,.14)',
+  high: '#3e8c5a',
+  med: '#b08442',
+  fav: '#c97a4a',
+  surface: '#efeadf',
+  paper: '#f6f3ec',
+}
+
+const FONTS = {
+  sans: '"Inter", system-ui, -apple-system, sans-serif',
+  serif: '"Fraunces", Georgia, serif',
+  mono: '"Geist Mono", "DM Mono", "JetBrains Mono", monospace',
+}
+
+/* ============================================================================
+ * Storage helpers — star/archive live in localStorage until the backend has
+ * columns for them.
+ * ========================================================================== */
+
+function loadClipFlags(sermonId) {
+  try {
+    const raw = localStorage.getItem(`clipFlags:${sermonId}`)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveClipFlags(sermonId, flags) {
+  try {
+    localStorage.setItem(`clipFlags:${sermonId}`, JSON.stringify(flags))
+  } catch {}
+}
+
+/* ============================================================================
+ * Page
  * ========================================================================== */
 
 export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   const [sermon, setSermon] = useState(null)
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(30)
+  const [clipFlags, setClipFlags] = useState(() => loadClipFlags(sermonId))
   const pollingRef = useRef(null)
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const s = await getSermon(sermonId)
       const client = clients.find(c => c.id === (clientId || s.client_id))
@@ -36,10 +99,10 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
       setLoading(false)
       if (s.status === 'processing') startPolling()
       else stopPolling()
-    } catch (e) {
+    } catch {
       setLoading(false)
     }
-  }
+  }, [sermonId, clientId, clients])
 
   function startPolling() {
     if (pollingRef.current) return
@@ -52,7 +115,7 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
           const client = clients.find(c => c.id === (clientId || s.client_id))
           setSermon({ ...s, _clientName: client?.name })
         }
-      } catch (e) {}
+      } catch {}
     }, 5000)
   }
 
@@ -63,8 +126,10 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   useEffect(() => {
     setLoading(true)
     setProgress(30)
+    setClipFlags(loadClipFlags(sermonId))
     load()
     return () => stopPolling()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sermonId])
 
   async function handleReprocess() {
@@ -75,9 +140,29 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     load()
   }
 
+  function toggleFav(clipId) {
+    setClipFlags(prev => {
+      const next = { ...prev, [clipId]: { ...prev[clipId], fav: !prev[clipId]?.fav } }
+      saveClipFlags(sermonId, next)
+      return next
+    })
+  }
+  function toggleArchived(clipId) {
+    setClipFlags(prev => {
+      const next = { ...prev, [clipId]: { ...prev[clipId], archived: !prev[clipId]?.archived } }
+      saveClipFlags(sermonId, next)
+      return next
+    })
+  }
+
   return (
-    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-      <DetailHeader sermon={sermon} sermonId={sermonId} onBack={onBack} onReprocess={handleReprocess} />
+    <div style={{
+      flex: 1, overflowY: 'auto',
+      background: colors.bg, color: colors.body,
+      fontFamily: FONTS.sans, fontSize: 13,
+      display: 'flex', flexDirection: 'column', minHeight: 0,
+    }}>
+      <TopBar sermon={sermon} sermonId={sermonId} onBack={onBack} onReprocess={handleReprocess} />
 
       {loading && (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: '3rem' }}>
@@ -94,66 +179,106 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
       )}
 
       {!loading && sermon?.status === 'completed' && (
-        <SplitView sermon={sermon} onReprocess={handleReprocess} />
+        <Body
+          sermon={sermon}
+          clipFlags={clipFlags}
+          onToggleFav={toggleFav}
+          onToggleArchived={toggleArchived}
+          onReprocess={handleReprocess}
+        />
       )}
     </div>
   )
 }
 
-/* ---------- Header ---------- */
+/* ============================================================================
+ * Top bar
+ * ========================================================================== */
 
-function DetailHeader({ sermon, sermonId, onBack, onReprocess }) {
-  const date = sermon?.sermon_date
-    ? new Date(sermon.sermon_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+function TopBar({ sermon, sermonId, onBack, onReprocess }) {
+  const meta = sermon
+    ? [sermon._clientName || sermon.client_id, formatDate(sermon.sermon_date), formatDuration(sermon.duration_seconds)]
+        .filter(Boolean).join(' · ')
     : ''
-  const duration = sermon?.duration_seconds ? formatDuration(sermon.duration_seconds) : ''
-  const meta = [sermon?._clientName, date, duration].filter(Boolean).join(' · ')
-
   return (
     <div style={{
-      background: 'var(--surface)', borderBottom: '1px solid var(--border)',
-      padding: '0.85rem 1.5rem',
-      display: 'flex', alignItems: 'center', gap: 12,
+      display: 'flex', alignItems: 'center', padding: '20px 28px', gap: 18,
+      borderBottom: `1px solid ${colors.line}`,
       position: 'sticky', top: 0, zIndex: 10,
+      background: colors.bg,
     }}>
-      <button
-        onClick={onBack}
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--text-2)', fontSize: 13, padding: '4px 8px',
-          borderRadius: 6,
-        }}
-      >
-        ← back
+      <button onClick={onBack} style={{
+        background: 'transparent', border: 'none', color: colors.dim,
+        display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+        fontSize: 12.5, fontFamily: FONTS.sans,
+      }}>
+        <Icon name="back" size={14} /> Back
       </button>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontFamily: FONTS.serif, fontSize: 22, fontWeight: 500,
+          color: colors.ink, letterSpacing: -0.2, lineHeight: 1,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '40vw',
+        }}>
           {sermon?.title || sermonId}
         </div>
         {meta && (
-          <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1 }}>{meta}</div>
+          <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 4, fontFamily: FONTS.mono }}>
+            {meta}
+          </div>
         )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {sermon && <Badge status={sermon.status} />}
-        {sermon?.status === 'completed' && <Btn small onClick={onReprocess}>Reprocess</Btn>}
-      </div>
+      <div style={{ flex: 1 }} />
+      {sermon && <StatusPill status={sermon.status} />}
+      {sermon?.status === 'completed' && (
+        <button onClick={onReprocess} style={{
+          background: 'transparent', border: `1px solid ${colors.line2}`,
+          color: colors.body, padding: '8px 14px', borderRadius: 8,
+          fontSize: 12.5, cursor: 'pointer', fontFamily: FONTS.sans,
+        }}>
+          Reprocess
+        </button>
+      )}
     </div>
   )
 }
 
-/* ---------- Loading / failure states ---------- */
+function StatusPill({ status }) {
+  const map = {
+    completed: { c: colors.high, label: 'Completed' },
+    processing: { c: '#a07a26', label: 'Processing' },
+    failed: { c: '#a23b3b', label: 'Failed' },
+    pending: { c: colors.dim, label: 'Pending' },
+    analyzing: { c: '#a07a26', label: 'Analyzing' },
+    transcribing: { c: '#a07a26', label: 'Transcribing' },
+  }
+  const s = map[status] || { c: colors.dim, label: status || '—' }
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 6, padding: '5px 11px',
+      background: `${s.c}1a`, color: s.c, borderRadius: 999,
+      fontSize: 11.5, fontWeight: 500, fontFamily: FONTS.sans,
+    }}>
+      <div style={{ width: 6, height: 6, borderRadius: 999, background: s.c }} />
+      {s.label}
+    </div>
+  )
+}
+
+/* ============================================================================
+ * Loading + failure states
+ * ========================================================================== */
 
 function ProcessingState({ progress }) {
   return (
     <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: '3rem' }}>
       <div style={{ textAlign: 'center' }}>
         <Spinner size={24} />
-        <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: '1rem' }}>
+        <p style={{ fontSize: 13, color: colors.body, marginTop: '1rem', fontFamily: FONTS.sans }}>
           Processing sermon… checking back automatically
         </p>
-        <div style={{ width: 300, margin: '1rem auto 0', height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-          <div style={{ height: '100%', background: 'var(--text)', borderRadius: 2, width: `${progress}%`, transition: 'width 1s ease' }} />
+        <div style={{ width: 300, margin: '1rem auto 0', height: 4, background: colors.line2, borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ height: '100%', background: colors.ink, borderRadius: 2, width: `${progress}%`, transition: 'width 1s ease' }} />
         </div>
       </div>
     </div>
@@ -162,124 +287,466 @@ function ProcessingState({ progress }) {
 
 function FailedState({ sermon, onReprocess }) {
   return (
-    <div style={{ padding: '1.5rem' }}>
+    <div style={{ padding: '1.5rem 28px' }}>
       <div style={{
-        border: '1px solid var(--red-bg)', borderRadius: 10,
-        background: 'var(--red-bg)', padding: '1rem',
+        border: `1px solid #d8b6b6`, borderRadius: 10,
+        background: '#fbecec', padding: '1rem',
       }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--red-text)', marginBottom: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#8b2929', marginBottom: 6, fontFamily: FONTS.sans }}>
           Processing failed
         </div>
         {sermon?.error_message && (
-          <div style={{ fontSize: 12, color: 'var(--red-text)', fontFamily: 'DM Mono, monospace' }}>
+          <div style={{ fontSize: 12, color: '#8b2929', fontFamily: FONTS.mono }}>
             {sermon.error_message}
           </div>
         )}
       </div>
       <div style={{ marginTop: 12 }}>
-        <Btn onClick={onReprocess}>Reprocess</Btn>
+        <button onClick={onReprocess} style={{
+          background: colors.ink, color: colors.paper, border: 'none',
+          padding: '8px 14px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer',
+          fontFamily: FONTS.sans,
+        }}>
+          Reprocess
+        </button>
       </div>
     </div>
   )
 }
 
-/* ---------- Split view: source on the left, clips sidebar on the right ---------- */
+/* ============================================================================
+ * Body — split layout with the source on the left, clip rail on the right
+ * ========================================================================== */
 
-function SplitView({ sermon, onReprocess }) {
+function Body({ sermon, clipFlags, onToggleFav, onToggleArchived, onReprocess }) {
+  // Decorate clips with derived fields the UI wants
+  const allClips = useMemo(
+    () => (sermon.clips || []).map(c => decorateClip(c, clipFlags, sermon.render_options)),
+    [sermon.clips, clipFlags, sermon.render_options],
+  )
+
+  // First HIGH-score clip selected by default (matches prototype)
+  const firstHigh = allClips.find(c => c.score === 'High') || allClips[0]
+  const [selectedId, setSelectedId] = useState(firstHigh?.id)
+  const [expandedId, setExpandedId] = useState(firstHigh?.id)
+  const [filter, setFilter] = useState('all')
+  const [sort, setSort] = useState('score')
+  const [query, setQuery] = useState('')
+  const [leftTab, setLeftTab] = useState('overview')
+
+  // Reset selection when the sermon's clip set changes (e.g. after reanalyze)
+  useEffect(() => {
+    if (!allClips.length) return
+    if (!allClips.find(c => c.id === selectedId)) {
+      const fh = allClips.find(c => c.score === 'High') || allClips[0]
+      setSelectedId(fh.id)
+      setExpandedId(fh.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allClips.length])
+
+  const visibleClips = useMemo(() => {
+    let r = allClips.filter(c => !c.archived)
+    if (filter === 'high') r = r.filter(c => c.score === 'High')
+    if (filter === 'starred') r = r.filter(c => c.fav)
+    if (query) {
+      const q = query.toLowerCase()
+      r = r.filter(c =>
+        (c.title || '').toLowerCase().includes(q) ||
+        (c.transcript || '').toLowerCase().includes(q),
+      )
+    }
+    if (sort === 'score') r = [...r].sort((a, b) => b.scoreNum - a.scoreNum)
+    else if (sort === 'length') r = [...r].sort((a, b) => b.durSec - a.durSec)
+    else r = [...r].sort((a, b) => a.inSec - b.inSec)
+    return r
+  }, [allClips, filter, query, sort])
+
+  const selectedClip = allClips.find(c => c.id === selectedId) || allClips[0]
+
+  // Keyboard shortcuts: ↑/↓ navigate, Space play, / search, S star, E archive
+  const playerRef = useRef(null)
+  useEffect(() => {
+    function onKey(e) {
+      const tag = (e.target?.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+        if (e.key === 'Escape') e.target.blur()
+        return
+      }
+      if (e.key === '/') { e.preventDefault(); document.getElementById('clip-search')?.focus(); return }
+      if (e.key === ' ' && playerRef.current) {
+        e.preventDefault()
+        const v = playerRef.current
+        if (v.paused) v.play(); else v.pause()
+        return
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!visibleClips.length) return
+        const idx = visibleClips.findIndex(c => c.id === expandedId)
+        const next = e.key === 'ArrowDown'
+          ? Math.min(idx + 1, visibleClips.length - 1)
+          : Math.max(idx - 1, 0)
+        const nc = visibleClips[next]
+        if (nc) { setExpandedId(nc.id); setSelectedId(nc.id) }
+        e.preventDefault()
+        return
+      }
+      if (e.key.toLowerCase() === 's' && selectedClip) {
+        e.preventDefault()
+        onToggleFav(selectedClip.id)
+      }
+      if (e.key.toLowerCase() === 'e' && selectedClip) {
+        e.preventDefault()
+        onToggleArchived(selectedClip.id)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [visibleClips, expandedId, selectedClip, onToggleFav, onToggleArchived])
+
   return (
     <div style={{
-      flex: 1,
-      display: 'grid',
-      gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
-      gap: 24,
-      padding: '1.5rem',
-      alignItems: 'start',
+      flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1.45fr) minmax(0, 1fr)',
+      minHeight: 0,
     }}>
-      <SourcePanel sermon={sermon} />
-      <ClipsSidebar sermon={sermon} onReprocess={onReprocess} />
+      <LeftColumn
+        sermon={sermon}
+        clips={allClips}
+        selectedClip={selectedClip}
+        selectedId={selectedId}
+        setSelectedId={(id) => { setSelectedId(id); setExpandedId(id) }}
+        leftTab={leftTab}
+        setLeftTab={setLeftTab}
+        playerRef={playerRef}
+      />
+      <RightColumn
+        allClips={allClips}
+        visibleClips={visibleClips}
+        sermon={sermon}
+        filter={filter} setFilter={setFilter}
+        sort={sort} setSort={setSort}
+        query={query} setQuery={setQuery}
+        expandedId={expandedId}
+        onToggle={(id) => {
+          setExpandedId(prev => (prev === id ? null : id))
+          setSelectedId(id)
+        }}
+        onSelect={(id) => setSelectedId(id)}
+        onFav={onToggleFav}
+        onArchive={onToggleArchived}
+        onReprocess={onReprocess}
+      />
     </div>
   )
 }
 
-/* ---------- Left: source video + tabs ---------- */
+/* ============================================================================
+ * Left column — video, clip-map strip, tabs
+ * ========================================================================== */
 
-function SourcePanel({ sermon }) {
-  const [tab, setTab] = useState('overview')
+function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, leftTab, setLeftTab, playerRef }) {
+  return (
+    <div style={{
+      padding: '20px 24px 20px 28px',
+      display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0,
+    }}>
+      <VideoPlayer
+        sermon={sermon}
+        clips={clips}
+        selectedClip={selectedClip}
+        selectedId={selectedId}
+        playerRef={playerRef}
+      />
+      <ClipMapStrip
+        sermon={sermon}
+        clips={clips}
+        selectedId={selectedId}
+        setSelectedId={setSelectedId}
+        playerRef={playerRef}
+      />
+      <LeftTabs leftTab={leftTab} setLeftTab={setLeftTab} />
+      <div style={{ padding: '4px 2px 24px' }}>
+        {leftTab === 'overview' && <OverviewTab sermon={sermon} clips={clips} />}
+        {leftTab === 'transcript' && <TranscriptTab sermon={sermon} />}
+        {leftTab === 'details' && <DetailsTab sermon={sermon} />}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Video player with custom controls ---------- */
+
+function VideoPlayer({ sermon, clips, selectedClip, selectedId, playerRef }) {
+  const [playing, setPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(sermon.duration_seconds || 0)
+  const scrubberRef = useRef(null)
+
+  // When the user clicks a different clip, seek the video to that clip's
+  // start. We keep one <video> element across selection changes — no
+  // unmount/remount — and just adjust currentTime.
+  useEffect(() => {
+    if (selectedClip && playerRef.current) {
+      const v = playerRef.current
+      // Seek slightly into the clip so the speaker is already mid-sentence
+      v.currentTime = Math.max(0, selectedClip.inSec + 0.05)
+    }
+  }, [selectedId])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleTimeUpdate() {
+    if (playerRef.current) setCurrentTime(playerRef.current.currentTime)
+  }
+  function handleLoadedMeta() {
+    if (playerRef.current) setDuration(playerRef.current.duration || sermon.duration_seconds || 0)
+  }
+  function togglePlay() {
+    const v = playerRef.current
+    if (!v) return
+    if (v.paused) { v.play(); setPlaying(true) }
+    else { v.pause(); setPlaying(false) }
+  }
+  function handleScrubberClick(e) {
+    if (!scrubberRef.current || !playerRef.current || !duration) return
+    const rect = scrubberRef.current.getBoundingClientRect()
+    const pct = (e.clientX - rect.left) / rect.width
+    playerRef.current.currentTime = Math.max(0, Math.min(duration, pct * duration))
+  }
+  function handleFullscreen() {
+    const v = playerRef.current
+    if (!v) return
+    if (v.requestFullscreen) v.requestFullscreen()
+    else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen() // iOS
+  }
+
+  const total = duration || sermon.duration_seconds || 1
+  const pct = total ? (currentTime / total) * 100 : 0
+
+  if (!sermon.source_video_url) {
+    return (
+      <div style={{
+        aspectRatio: '16/9', borderRadius: 14,
+        background: colors.surface, border: `1px dashed ${colors.line2}`,
+        display: 'grid', placeItems: 'center',
+        color: colors.muted, fontSize: 13, fontFamily: FONTS.sans,
+      }}>
+        No source video (audio-only sermon or older record)
+      </div>
+    )
+  }
 
   return (
-    <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
-      {sermon.source_video_url ? (
+    <div style={{
+      position: 'relative', aspectRatio: '16/9', borderRadius: 14,
+      overflow: 'hidden', background: '#000', border: `1px solid ${colors.line2}`,
+    }}>
+      <video
+        ref={playerRef}
+        src={sermon.source_video_url}
+        preload="metadata"
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMeta}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain', background: '#000' }}
+      />
+
+      {/* "Now playing" pill — top-left */}
+      {selectedClip && (
         <div style={{
-          background: '#000', borderRadius: 12, overflow: 'hidden',
-          border: '1px solid var(--border)',
+          position: 'absolute', top: 12, left: 12, padding: '5px 10px',
+          background: 'rgba(20,16,10,.65)', backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)', borderRadius: 999,
+          fontSize: 11.5, color: colors.paper,
+          display: 'flex', alignItems: 'center', gap: 6,
+          fontFamily: FONTS.sans, maxWidth: '60%',
         }}>
-          <video
-            src={sermon.source_video_url}
-            controls
-            preload="metadata"
-            style={{ width: '100%', maxHeight: 480, display: 'block' }}
-          />
-        </div>
-      ) : (
-        <div style={{
-          background: 'var(--surface-2)', border: '1px dashed var(--border-mid)',
-          borderRadius: 12, padding: '3rem', textAlign: 'center',
-          color: 'var(--text-3)', fontSize: 13,
-        }}>
-          No source video available (audio-only pipeline or older sermon)
+          <span style={{
+            width: 6, height: 6, borderRadius: 999,
+            background: selectedClip.score === 'High' ? colors.high : colors.med,
+            flexShrink: 0,
+          }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            Now playing: {selectedClip.title}
+          </span>
         </div>
       )}
 
+      {/* Transport bar — bottom */}
       <div style={{
-        border: '1px solid var(--border)', borderRadius: 12,
-        background: 'var(--surface)', overflow: 'hidden',
+        position: 'absolute', bottom: 12, left: 12, right: 12,
+        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
+        background: 'rgba(20,16,10,.65)', backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)', borderRadius: 10,
       }}>
-        <Tabs
-          tabs={[
-            { id: 'overview', label: 'Overview' },
-            { id: 'transcript', label: 'Transcript' },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
-        <div style={{ padding: '1rem 1.25rem' }}>
-          {tab === 'overview' && <OverviewTab sermon={sermon} />}
-          {tab === 'transcript' && <TranscriptTab sermon={sermon} />}
+        <button onClick={togglePlay} style={{
+          width: 32, height: 32, borderRadius: 999,
+          background: colors.paper, border: 'none', cursor: 'pointer',
+          display: 'grid', placeItems: 'center', flexShrink: 0,
+        }}>
+          <Icon name={playing ? 'pause' : 'play'} size={13} color={colors.ink} />
+        </button>
+        <div style={{
+          fontFamily: FONTS.mono, fontSize: 11, color: '#e8e2d6',
+          minWidth: 110, flexShrink: 0,
+        }}>
+          {fmtHMS(currentTime)} / {fmtHMS(total)}
         </div>
+        <div
+          ref={scrubberRef}
+          onClick={handleScrubberClick}
+          style={{
+            flex: 1, height: 6, background: 'rgba(255,255,255,.18)',
+            borderRadius: 2, position: 'relative', cursor: 'pointer',
+          }}
+        >
+          {/* progress */}
+          <div style={{
+            position: 'absolute', left: 0, top: 0, bottom: 0,
+            width: `${pct}%`, background: colors.paper, borderRadius: 2,
+          }} />
+          {/* clip markers */}
+          {clips.map(c => (
+            <div key={c.id} style={{
+              position: 'absolute',
+              left: `${(c.inSec / total) * 100}%`,
+              width: `${((c.outSec - c.inSec) / total) * 100}%`,
+              top: -2, bottom: -2,
+              background: c.score === 'High'
+                ? 'rgba(127,179,104,.7)'
+                : 'rgba(231,183,104,.6)',
+              borderRadius: 2, pointerEvents: 'none',
+            }} />
+          ))}
+        </div>
+        <Icon name="vol" size={14} color="#e8e2d6" />
+        <button onClick={handleFullscreen} style={{
+          background: 'transparent', border: 'none', padding: 0,
+          cursor: 'pointer', display: 'grid', placeItems: 'center',
+        }}>
+          <Icon name="fullscreen" size={14} color="#e8e2d6" />
+        </button>
       </div>
     </div>
   )
 }
 
-function OverviewTab({ sermon }) {
-  const opts = sermon.render_options || {}
-  const optsList = []
-  if (opts.vertical) optsList.push('Vertical (9:16)')
-  if (opts.vertical && opts.face_tracking !== false) optsList.push('AI face tracking')
-  if (opts.crop_lower_third === true) optsList.push('Crop lower third (forced)')
-  else if (opts.crop_lower_third === false) optsList.push('Crop lower third (off)')
-  else if (opts.vertical) optsList.push('Crop lower third (auto-detect)')
-  if (!optsList.length) optsList.push('Default (horizontal, no reframing)')
+/* ---------- Clip-map strip ---------- */
 
-  const processedAt = sermon.processed_at
-    ? new Date(sermon.processed_at).toLocaleString()
-    : null
+function ClipMapStrip({ sermon, clips, selectedId, setSelectedId, playerRef }) {
+  const total = sermon.duration_seconds || 1
+  const [playhead, setPlayhead] = useState(0)
+  useEffect(() => {
+    if (!playerRef.current) return
+    function tick() { setPlayhead(playerRef.current?.currentTime || 0) }
+    const v = playerRef.current
+    v.addEventListener('timeupdate', tick)
+    return () => v.removeEventListener('timeupdate', tick)
+  }, [playerRef])
+
+  // Five evenly-spaced time labels (00:00, 10:00, 20:00, ..., total)
+  const tickCount = 5
+  const tickLabels = []
+  for (let i = 0; i < tickCount - 1; i++) {
+    tickLabels.push(fmtMMSS(Math.floor((total / (tickCount - 1)) * i / 60) * 60))
+  }
+  tickLabels.push(fmtMMSS(total))
 
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <Field label="Sermon" value={sermon.title} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <Field label="Date" value={sermon.sermon_date
-          ? new Date(sermon.sermon_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-          : '—'} />
-        <Field label="Duration" value={sermon.duration_seconds ? formatDuration(sermon.duration_seconds) : '—'} />
+    <div style={{
+      padding: '10px 14px', border: `1px solid ${colors.line}`,
+      borderRadius: 10, background: colors.card,
+    }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 8,
+      }}>
+        <span style={{
+          fontSize: 10.5, color: colors.dim, textTransform: 'uppercase',
+          letterSpacing: 1.2, fontFamily: FONTS.sans,
+        }}>
+          Sermon · clip map
+        </span>
+        <span style={{ fontSize: 11, color: colors.dim, fontFamily: FONTS.mono }}>
+          {clips.length} clips found
+        </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <Field label="Client" value={sermon._clientName || sermon.client_id || '—'} />
-        <Field label="Clips found" value={String(sermon.clips_found || 0)} />
+      <div style={{ position: 'relative', height: 38, marginTop: 4 }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 1, background: colors.line2 }} />
+        {clips.map(c => {
+          const left = (c.inSec / total) * 100
+          const w = Math.max(1.4, ((c.outSec - c.inSec) / total) * 100)
+          const isSel = c.id === selectedId
+          const col = c.score === 'High' ? colors.high : colors.med
+          return (
+            <button
+              key={c.id}
+              onClick={() => setSelectedId(c.id)}
+              title={c.title}
+              style={{
+                position: 'absolute', left: `${left}%`, width: `${w}%`,
+                top: isSel ? 4 : 12, bottom: isSel ? 4 : 12,
+                background: col, border: 'none', borderRadius: 3, cursor: 'pointer',
+                boxShadow: isSel ? `0 0 0 3px ${col}33` : 'none',
+                transition: 'all .15s', padding: 0,
+              }}
+              aria-label={`Clip at ${fmtHMS(c.inSec)}: ${c.title}`}
+            />
+          )
+        })}
+        <div style={{
+          position: 'absolute', left: `${(playhead / total) * 100}%`,
+          top: 0, bottom: 0, width: 1.5, background: colors.ink, pointerEvents: 'none',
+        }} />
       </div>
-      <Field label="Render options" value={optsList.join(' · ')} />
-      {processedAt && <Field label="Processed at" value={processedAt} />}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', marginTop: 4,
+        fontFamily: FONTS.mono, fontSize: 10, color: colors.muted,
+      }}>
+        {tickLabels.map((l, i) => <span key={i}>{l}</span>)}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Left tabs ---------- */
+
+function LeftTabs({ leftTab, setLeftTab }) {
+  const tabs = [
+    ['overview', 'Overview'],
+    ['transcript', 'Transcript'],
+    ['details', 'Render settings'],
+  ]
+  return (
+    <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${colors.line}` }}>
+      {tabs.map(([k, label]) => (
+        <button key={k} onClick={() => setLeftTab(k)} style={{
+          padding: '10px 14px', background: 'transparent', border: 'none',
+          color: leftTab === k ? colors.ink : colors.dim, cursor: 'pointer',
+          fontSize: 12.5, fontWeight: 500, fontFamily: FONTS.sans,
+          borderBottom: `2px solid ${leftTab === k ? colors.ink : 'transparent'}`,
+          marginBottom: -1,
+        }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function OverviewTab({ sermon, clips }) {
+  const highCount = clips.filter(c => c.score === 'High').length
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+      <Field label="Sermon" value={sermon.title} serif />
+      <Field label="Client" value={sermon._clientName || sermon.client_id || '—'} />
+      <Field label="Date" value={formatDateLong(sermon.sermon_date)} />
+      <Field label="Duration" value={formatDuration(sermon.duration_seconds) || '—'} />
+      <Field
+        label="Clips found"
+        value={`${clips.length}${highCount ? ` (${highCount} high)` : ''}`}
+      />
+      <Field label="Status" value={sermon.status === 'completed' ? 'Completed' : sermon.status} />
+      <Field label="Render presets" value={summarizeRenderOptions(sermon.render_options)} span={2} />
     </div>
   )
 }
@@ -287,7 +754,10 @@ function OverviewTab({ sermon }) {
 function TranscriptTab({ sermon }) {
   if (!sermon.transcript) {
     return (
-      <div style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: '2rem' }}>
+      <div style={{
+        fontSize: 13, color: colors.muted, textAlign: 'center',
+        padding: '2rem', fontFamily: FONTS.sans,
+      }}>
         No transcript available yet
       </div>
     )
@@ -295,15 +765,16 @@ function TranscriptTab({ sermon }) {
   const wordCount = sermon.transcript.split(/\s+/).length
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8, fontFamily: FONTS.mono }}>
         {wordCount.toLocaleString()} words
       </div>
       <div style={{
-        fontSize: 13, color: 'var(--text-2)', lineHeight: 1.7,
+        fontSize: 13.5, lineHeight: 1.75, color: colors.body,
         maxHeight: 480, overflowY: 'auto',
         whiteSpace: 'pre-wrap',
-        background: 'var(--surface-2)', borderRadius: 8,
-        padding: '1rem',
+        background: colors.card, border: `1px solid ${colors.line}`,
+        borderRadius: 8, padding: '14px 18px',
+        fontFamily: FONTS.sans,
       }}>
         {sermon.transcript}
       </div>
@@ -311,48 +782,65 @@ function TranscriptTab({ sermon }) {
   )
 }
 
-function Tabs({ tabs, value, onChange }) {
+function DetailsTab({ sermon }) {
+  const opts = sermon.render_options || {}
   return (
-    <div style={{
-      display: 'flex',
-      borderBottom: '1px solid var(--border)',
-      background: 'var(--surface-2)',
-    }}>
-      {tabs.map(t => {
-        const active = t.id === value
-        return (
-          <button
-            key={t.id}
-            onClick={() => onChange(t.id)}
-            style={{
-              padding: '12px 18px',
-              fontSize: 13, fontWeight: 500,
-              border: 'none', background: 'transparent',
-              color: active ? 'var(--text)' : 'var(--text-2)',
-              borderBottom: `2px solid ${active ? 'var(--text)' : 'transparent'}`,
-              cursor: 'pointer',
-              transition: 'color 0.12s',
-            }}
-          >
-            {t.label}
-          </button>
-        )
-      })}
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+      <Field label="Output" value={opts.vertical ? 'Vertical 9:16' : 'Horizontal 16:9'} />
+      <Field label="Face tracking" value={opts.vertical ? (opts.face_tracking === false ? 'Off (static center)' : 'AI auto-frame') : '—'} />
+      <Field
+        label="Lower-third"
+        value={
+          opts.crop_lower_third === true ? 'Cropped (forced)' :
+          opts.crop_lower_third === false ? 'Not cropped' :
+          opts.vertical ? 'Auto-detect' : '—'
+        }
+      />
+      <Field label="Captions" value="Karaoke (auto-burned)" />
+      <Field
+        label="Processed at"
+        value={sermon.processed_at ? new Date(sermon.processed_at).toLocaleString() : '—'}
+      />
+      <Field label="Status" value={sermon.status} />
     </div>
   )
 }
 
-/* ---------- Right: clips sidebar ---------- */
+function Field({ label, value, span, serif }) {
+  return (
+    <div style={{ gridColumn: span ? `span ${span}` : undefined }}>
+      <div style={{
+        fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
+        letterSpacing: 1.2, marginBottom: 4, fontFamily: FONTS.sans,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: serif ? 16 : 13.5, color: colors.ink,
+        fontFamily: serif ? FONTS.serif : FONTS.sans,
+        fontWeight: serif ? 500 : 400, lineHeight: 1.55,
+      }}>
+        {value || '—'}
+      </div>
+    </div>
+  )
+}
 
-function ClipsSidebar({ sermon, onReprocess }) {
-  const clips = sermon.clips || []
+/* ============================================================================
+ * Right column — clip rail
+ * ========================================================================== */
 
+function RightColumn({
+  allClips, visibleClips, sermon,
+  filter, setFilter, sort, setSort, query, setQuery,
+  expandedId, onToggle, onSelect, onFav, onArchive, onReprocess,
+}) {
   async function handleDownloadAll() {
-    for (const clip of clips) {
+    for (const clip of visibleClips) {
       if (!clip.rendered_video_url) continue
       const a = document.createElement('a')
       a.href = clip.rendered_video_url
-      a.download = `${slug(sermon.title || 'sermon')}-${clip.clip_id.slice(0, 8)}.mp4`
+      a.download = `${slug(sermon.title || 'sermon')}-${clip.id.slice(0, 8)}.mp4`
       a.target = '_blank'
       a.rel = 'noopener'
       document.body.appendChild(a)
@@ -361,60 +849,148 @@ function ClipsSidebar({ sermon, onReprocess }) {
       await new Promise(r => setTimeout(r, 350))
     }
   }
-
-  const hasAnyRendered = clips.some(c => c.rendered_video_url)
+  const hasAnyRendered = visibleClips.some(c => c.rendered_video_url)
 
   return (
-    <div style={{ display: 'grid', gap: 12, position: 'sticky', top: 84, alignSelf: 'start' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 14, fontWeight: 500 }}>
-          Clips <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>· {clips.length}</span>
+    <div style={{
+      borderLeft: `1px solid ${colors.line}`,
+      display: 'flex', flexDirection: 'column', minWidth: 0,
+      background: colors.bg,
+    }}>
+      {/* header */}
+      <div style={{ padding: '20px 22px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
+          <h2 style={{
+            margin: 0, fontFamily: FONTS.serif, fontWeight: 500,
+            fontSize: 22, color: colors.ink, letterSpacing: -0.2,
+          }}>
+            Clips
+          </h2>
+          <span style={{ fontFamily: FONTS.mono, fontSize: 12, color: colors.dim }}>
+            {visibleClips.length} of {allClips.length}
+          </span>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={handleDownloadAll}
+            disabled={!hasAnyRendered}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+              background: colors.ink, color: colors.paper, border: 'none',
+              borderRadius: 7, fontSize: 11.5, fontWeight: 500,
+              cursor: hasAnyRendered ? 'pointer' : 'not-allowed',
+              opacity: hasAnyRendered ? 1 : 0.5,
+              fontFamily: FONTS.sans,
+            }}
+          >
+            <Icon name="download" size={12} color={colors.paper} /> Download all
+          </button>
+        </div>
+
+        {/* search */}
+        <div style={{ position: 'relative', marginBottom: 10 }}>
+          <div style={{
+            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+          }}>
+            <Icon name="search" size={13} color={colors.muted} />
+          </div>
+          <input
+            id="clip-search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search clip titles & transcripts…"
+            style={{
+              width: '100%', padding: '9px 12px 9px 34px', boxSizing: 'border-box',
+              background: colors.card, border: `1px solid ${colors.line2}`,
+              borderRadius: 8, fontSize: 12.5, color: colors.body, outline: 'none',
+              fontFamily: FONTS.sans,
+            }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {(() => {
+            const opts = [
+              ['all', 'All', allClips.length],
+              ['high', 'High score', allClips.filter(c => c.score === 'High').length],
+              ['starred', 'Starred', allClips.filter(c => c.fav).length],
+            ]
+            return opts.map(([k, label, count]) => {
+              const on = filter === k
+              return (
+                <button key={k} onClick={() => setFilter(k)} style={{
+                  padding: '4px 11px', borderRadius: 999, fontSize: 11.5,
+                  cursor: 'pointer',
+                  background: on ? colors.ink : colors.card,
+                  color: on ? colors.paper : colors.body,
+                  border: `1px solid ${on ? colors.ink : colors.line2}`,
+                  fontWeight: on ? 600 : 400,
+                  fontFamily: FONTS.sans,
+                }}>
+                  {label} <span style={{ opacity: 0.65, marginLeft: 4 }}>{count}</span>
+                </button>
+              )
+            })
+          })()}
+          <div style={{ flex: 1 }} />
+          <select value={sort} onChange={e => setSort(e.target.value)} style={{
+            padding: '5px 10px', borderRadius: 7, fontSize: 11.5,
+            fontFamily: FONTS.sans, background: colors.card,
+            border: `1px solid ${colors.line2}`, color: colors.body,
+            cursor: 'pointer', outline: 'none',
+          }}>
+            <option value="score">Sort: Score</option>
+            <option value="length">Sort: Length</option>
+            <option value="time">Sort: In sermon</option>
+          </select>
         </div>
       </div>
 
-      <div style={{
-        display: 'flex', gap: 8,
-        padding: 8,
-        background: 'var(--surface-2)', borderRadius: 10,
-        border: '1px solid var(--border)',
-      }}>
-        <Btn small onClick={onReprocess} style={{ flex: 1 }}>
-          Find more
-        </Btn>
-        <Btn small onClick={handleDownloadAll} disabled={!hasAnyRendered} style={{ flex: 1 }}>
-          Download all
-        </Btn>
+      {/* accordion */}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {visibleClips.map(c => (
+          <ClipRow
+            key={c.id}
+            clip={c}
+            sermonTitle={sermon.title}
+            expanded={expandedId === c.id}
+            onToggle={onToggle}
+            onSelect={onSelect}
+            onFav={onFav}
+            onArchive={onArchive}
+          />
+        ))}
+        {visibleClips.length === 0 && (
+          <div style={{
+            padding: 40, textAlign: 'center', color: colors.muted,
+            fontSize: 13, fontFamily: FONTS.sans,
+          }}>
+            No clips match. Try clearing filters.
+          </div>
+        )}
       </div>
-
-      {clips.length === 0 ? (
-        <EmptyState message="No clips were identified for this sermon." />
-      ) : (
-        <div style={{
-          display: 'grid', gap: 12,
-          maxHeight: 'calc(100vh - 180px)',
-          overflowY: 'auto', paddingRight: 4,
-        }}>
-          {clips.map((clip, i) => (
-            <ClipCard key={clip.clip_id || i} clip={clip} sermonTitle={sermon.title} />
-          ))}
-        </div>
-      )}
     </div>
   )
 }
 
-/* ---------- Clip card ---------- */
+/* ---------- Single clip row (collapsed + expanded) ---------- */
 
-function ClipCard({ clip, sermonTitle }) {
-  const [expanded, setExpanded] = useState(false)
-  const hasVideo = !!clip.rendered_video_url
-  const duration = clipDurationSec(clip)
+function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArchive }) {
+  const accent = clip.score === 'High' ? colors.high : colors.med
+  const [copied, setCopied] = useState(null) // 'hook' | 'caption' | 'transcript' | null
 
+  function copy(text, key) {
+    if (!text) return
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(key)
+      setTimeout(() => setCopied(null), 1500)
+    })
+  }
   function handleDownload() {
     if (!clip.rendered_video_url) return
     const a = document.createElement('a')
     a.href = clip.rendered_video_url
-    a.download = `${slug(sermonTitle || 'sermon')}-${clip.clip_id.slice(0, 8)}.mp4`
+    a.download = `${slug(sermonTitle || 'sermon')}-${clip.id.slice(0, 8)}.mp4`
     a.target = '_blank'
     a.rel = 'noopener'
     document.body.appendChild(a)
@@ -424,166 +1000,313 @@ function ClipCard({ clip, sermonTitle }) {
 
   return (
     <div style={{
-      border: '1px solid var(--border)', borderRadius: 12,
-      background: 'var(--surface)', overflow: 'hidden',
+      background: expanded ? colors.card : 'transparent',
+      borderTop: `1px solid ${colors.line}`,
+      transition: 'background .15s',
     }}>
-      {/* Header strip — duration + strength + (future) tags */}
       <div style={{
-        padding: '8px 12px',
-        display: 'flex', alignItems: 'center', gap: 8,
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--surface-2)',
+        display: 'grid', gridTemplateColumns: 'auto 1fr auto',
+        alignItems: 'flex-start', gap: 12, padding: '14px 16px',
       }}>
-        {duration && (
-          <span style={{
-            fontFamily: 'DM Mono, monospace', fontSize: 11, fontWeight: 500,
-            color: 'var(--text)',
-            background: 'var(--surface)',
-            padding: '2px 8px', borderRadius: 6,
-            border: '1px solid var(--border)',
-          }}>
-            {Math.round(duration)}s
-          </span>
-        )}
-        <span style={{ flex: 1 }} />
-        <Badge status={clip.strength?.toLowerCase()} />
-      </div>
+        <button
+          onClick={() => onToggle(clip.id)}
+          aria-expanded={expanded}
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            padding: '4px 0', display: 'flex', alignItems: 'flex-start',
+            color: colors.dim,
+          }}
+        >
+          <Icon name={expanded ? 'chev' : 'chevR'} size={14} color={colors.dim} />
+        </button>
 
-      {/* Video / error */}
-      {hasVideo && (
-        <div style={{ background: '#000', display: 'flex', justifyContent: 'center' }}>
-          <video
-            src={clip.rendered_video_url}
-            controls
-            preload="metadata"
-            style={{ maxHeight: 380, maxWidth: '100%', display: 'block' }}
-          />
-        </div>
-      )}
-      {!hasVideo && clip.render_error && (
-        <div style={{
-          padding: '10px 12px', fontSize: 12,
-          color: 'var(--red-text)', background: 'var(--red-bg)',
-        }}>
-          <strong>Render failed:</strong> {clip.render_error}
-        </div>
-      )}
-
-      {/* Body */}
-      <div style={{ padding: '12px' }}>
-        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
-          {clip.start_timestamp} → {clip.end_timestamp}
-        </div>
-        {clip.suggested_hook && (
+        <button
+          onClick={() => onToggle(clip.id)}
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            padding: 0, textAlign: 'left', minWidth: 0,
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontFamily: FONTS.mono, fontSize: 11, color: colors.dim }}>
+              {fmtHMS(clip.inSec)}
+            </span>
+            <span style={{ width: 3, height: 3, borderRadius: 999, background: colors.muted }} />
+            <span style={{ fontFamily: FONTS.mono, fontSize: 11, color: colors.dim }}>
+              {clip.durSec}s
+            </span>
+            <span style={{ flex: 1 }} />
+            <ScoreBadge accent={accent} score={clip.score} />
+          </div>
           <div style={{
-            fontSize: 14, fontWeight: 500, color: 'var(--text)',
-            marginBottom: 8, lineHeight: 1.4,
+            fontSize: 14, fontWeight: 500, color: colors.ink,
+            lineHeight: 1.35, fontFamily: FONTS.serif,
           }}>
-            {clip.suggested_hook}
+            {clip.title}
           </div>
-        )}
-        {clip.transcript && (
-          <p style={{
-            fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6,
-            fontStyle: 'italic',
-            paddingLeft: 10, borderLeft: '3px solid var(--border-mid)',
-            margin: '0 0 8px',
-            display: '-webkit-box',
-            WebkitLineClamp: expanded ? 'unset' : 3,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}>
-            "{clip.transcript}"
-          </p>
-        )}
+        </button>
 
-        {expanded && (
-          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-            <Field label="Why it works" value={clip.why_it_works} small />
-            <Field label="Caption" value={clip.suggested_caption} small />
-          </div>
-        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onFav(clip.id) }}
+          style={{
+            background: 'transparent', border: 'none', padding: 4,
+            cursor: 'pointer', color: clip.fav ? colors.fav : colors.muted,
+            alignSelf: 'flex-start',
+          }}
+          aria-label={clip.fav ? 'Unstar' : 'Star'}
+        >
+          <Icon name={clip.fav ? 'starFill' : 'star'} size={15} />
+        </button>
+      </div>
 
-        {/* Footer actions */}
-        <div style={{
-          display: 'flex', gap: 6, marginTop: 12, alignItems: 'center',
-          flexWrap: 'wrap',
-        }}>
-          <Btn small onClick={() => setExpanded(e => !e)}>
-            {expanded ? 'Less' : 'More'}
-          </Btn>
-          {clip.suggested_hook && (
-            <CopyButton text={clip.suggested_hook} label="Copy hook" />
+      {expanded && (
+        <div style={{ padding: '0 16px 16px 42px' }}>
+          {/* Rendered video preview (real, not the prototype's placeholder) */}
+          {clip.rendered_video_url && (
+            <div style={{ marginBottom: 10, background: '#000', borderRadius: 8, overflow: 'hidden' }}>
+              <video
+                src={clip.rendered_video_url}
+                controls
+                preload="metadata"
+                style={{ width: '100%', maxHeight: 360, display: 'block', objectFit: 'contain' }}
+              />
+            </div>
           )}
+
+          {clip.render_error && !clip.rendered_video_url && (
+            <div style={{
+              padding: '10px 12px', fontSize: 12, marginBottom: 10,
+              color: '#8b2929', background: '#fbecec', borderRadius: 6,
+              fontFamily: FONTS.sans,
+            }}>
+              <strong>Render failed:</strong> {clip.render_error}
+            </div>
+          )}
+
+          {!clip.rendered_video_url && !clip.render_error && (
+            <div style={{
+              padding: '10px 12px', fontSize: 12, marginBottom: 10,
+              color: colors.dim, background: colors.surface, borderRadius: 6,
+              fontFamily: FONTS.sans,
+            }}>
+              Not rendered yet — this clip came from a "Find more" re-roll. Render on demand is coming soon.
+            </div>
+          )}
+
+          {/* Transcript pull-quote */}
+          {clip.transcript && (
+            <div style={{
+              fontSize: 12.5, lineHeight: 1.55, color: colors.body,
+              fontStyle: 'italic', padding: '10px 12px',
+              borderLeft: `2px solid ${accent}`, background: colors.surface,
+              borderRadius: '0 6px 6px 0', marginBottom: 10,
+              fontFamily: FONTS.sans,
+            }}>
+              "{clip.transcript}"
+            </div>
+          )}
+
+          {/* Caption preview */}
           {clip.suggested_caption && (
-            <CopyButton text={clip.suggested_caption} label="Copy caption" />
+            <div style={{ marginBottom: 10 }}>
+              <div style={{
+                fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
+                letterSpacing: 1.2, marginBottom: 4, fontFamily: FONTS.sans,
+              }}>
+                Caption draft
+              </div>
+              <div style={{
+                fontSize: 12.5, lineHeight: 1.55, color: colors.body,
+                fontFamily: FONTS.sans,
+              }}>
+                {clip.suggested_caption}
+              </div>
+            </div>
           )}
-          {hasVideo && (
-            <Btn small primary onClick={handleDownload}>Download</Btn>
+
+          {/* Format chips */}
+          {clip.formats?.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {clip.formats.map(f => (
+                <span key={f} style={{
+                  padding: '2px 8px', border: `1px solid ${colors.line2}`,
+                  borderRadius: 4, fontSize: 10.5, fontFamily: FONTS.mono,
+                  color: colors.dim,
+                }}>
+                  {f}
+                </span>
+              ))}
+            </div>
           )}
+
+          {/* Action row */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <Action icon="play" label="Play" onClick={() => onSelect(clip.id)} />
+            <Action icon="edit" label="Trim" disabled title="Coming soon — needs render-on-demand backend" />
+            <Action
+              icon="copy"
+              label={copied === 'hook' ? 'Copied' : 'Copy hook'}
+              onClick={() => copy(clip.title, 'hook')}
+              disabled={!clip.title}
+            />
+            <Action
+              icon="copy"
+              label={copied === 'caption' ? 'Copied' : 'Copy caption'}
+              onClick={() => copy(clip.suggested_caption, 'caption')}
+              disabled={!clip.suggested_caption}
+            />
+            <Action icon="share" label="Share" disabled title="Coming soon" />
+            <Action
+              icon="archive"
+              label={clip.archived ? 'Unarchive' : 'Archive'}
+              onClick={() => onArchive(clip.id)}
+            />
+            <div style={{ flex: 1 }} />
+            <Action
+              icon="download"
+              label="Download"
+              primary
+              onClick={handleDownload}
+              disabled={!clip.rendered_video_url}
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
 
-/* ---------- Small helpers ---------- */
-
-function Field({ label, value, small }) {
+function ScoreBadge({ accent, score }) {
   return (
-    <div>
-      <div style={{
-        fontSize: 10, color: 'var(--text-3)',
-        textTransform: 'uppercase', letterSpacing: '0.07em',
-        marginBottom: 4,
-      }}>
-        {label}
-      </div>
-      <div style={{ fontSize: small ? 12 : 13, color: 'var(--text)', lineHeight: 1.55 }}>
-        {value || '—'}
-      </div>
-    </div>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 500,
+      background: `${accent}1f`, color: accent, fontFamily: FONTS.sans,
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: 999, background: accent }} />
+      {score}
+    </span>
   )
 }
 
-function CopyButton({ text, label }) {
-  const [copied, setCopied] = useState(false)
-  function handle() {
-    navigator.clipboard?.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
+function Action({ icon, label, primary, onClick, disabled, title }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '6px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 500,
+        background: primary ? colors.ink : 'transparent',
+        color: primary ? colors.paper : colors.body,
+        border: `1px solid ${primary ? colors.ink : colors.line2}`,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+        fontFamily: FONTS.sans,
+      }}
+    >
+      <Icon name={icon} size={12} color={primary ? colors.paper : colors.body} />
+      {label}
+    </button>
+  )
+}
+
+/* ============================================================================
+ * Helpers — clip decoration, formatting
+ * ========================================================================== */
+
+function decorateClip(c, clipFlags, renderOptions) {
+  const inSec = parseHMS(c.start_timestamp)
+  const outSec = parseHMS(c.end_timestamp)
+  const durSec = Math.max(0, Math.round(outSec - inSec))
+  const strength = (c.strength || '').toLowerCase()
+  const score = strength === 'high' ? 'High' : strength === 'medium' ? 'Medium' : 'Medium'
+  const scoreNum = strength === 'high' ? 1.0 : strength === 'medium' ? 0.5 : 0.2
+  const flags = clipFlags[c.clip_id] || {}
+  // Format chips: we currently render one format per sermon. Surface the
+  // one we know about so the chip row reads meaningfully.
+  const formats = []
+  if (renderOptions?.vertical) formats.push('9:16')
+  else formats.push('16:9')
+  return {
+    id: c.clip_id,
+    title: c.suggested_hook || c.transcript?.slice(0, 80) || 'Untitled clip',
+    transcript: c.transcript || '',
+    suggested_caption: c.suggested_caption || '',
+    inSec, outSec, durSec,
+    score, scoreNum,
+    formats,
+    rendered_video_url: c.rendered_video_url,
+    render_error: c.render_error,
+    start_timestamp: c.start_timestamp,
+    end_timestamp: c.end_timestamp,
+    fav: !!flags.fav,
+    archived: !!flags.archived,
   }
-  return (
-    <Btn small onClick={handle}>
-      {copied ? 'Copied' : label}
-    </Btn>
-  )
 }
 
-function clipDurationSec(clip) {
-  try {
-    const s = parseHMS(clip.start_timestamp)
-    const e = parseHMS(clip.end_timestamp)
-    if (e > s) return e - s
-  } catch (e) {}
-  return null
+function summarizeRenderOptions(opts) {
+  if (!opts) return 'Default (horizontal)'
+  const out = []
+  if (opts.vertical) out.push('Vertical 9:16')
+  else out.push('Horizontal 16:9')
+  if (opts.vertical && opts.face_tracking !== false) out.push('AI face tracking')
+  if (opts.vertical && opts.face_tracking === false) out.push('Static center crop')
+  if (opts.crop_lower_third === true) out.push('Lower-third cropped')
+  else if (opts.crop_lower_third === false) out.push('Lower-third kept')
+  else if (opts.vertical) out.push('Lower-third auto-detect')
+  return out.join(' · ')
 }
 
 function parseHMS(ts) {
-  if (!ts) return NaN
+  if (!ts) return 0
   const parts = ts.split(':').map(Number)
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
   if (parts.length === 2) return parts[0] * 60 + parts[1]
-  return NaN
+  return 0
+}
+
+function fmtHMS(seconds) {
+  if (!seconds || !isFinite(seconds)) return '00:00:00'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function fmtMMSS(seconds) {
+  if (!seconds || !isFinite(seconds)) return '00:00'
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 function formatDuration(seconds) {
+  if (!seconds) return ''
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   if (m === 0) return `${s}s`
   if (s === 0) return `${m}m`
   return `${m}m ${s}s`
+}
+
+function formatDate(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch {
+    return iso
+  }
+}
+
+function formatDateLong(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  } catch {
+    return iso
+  }
 }
 
 function slug(s) {
