@@ -52,3 +52,21 @@ export async function reprocessSermon(id) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
+
+// Render-on-demand for a single clip. Two main uses:
+//   - "Render now" on an un-rendered clip → no options
+//   - Trim → pass new in/out as start_seconds + end_seconds
+// Backend queues a background task and returns immediately; poll
+// GET /sermon/{sermon_id} for completion (rendered_video_url appears).
+export async function renderClip(clipId, { startSeconds, endSeconds } = {}) {
+  const body = {}
+  if (typeof startSeconds === 'number') body.start_seconds = startSeconds
+  if (typeof endSeconds === 'number') body.end_seconds = endSeconds
+  const res = await fetch(`${BASE}/clip/${clipId}/render`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}

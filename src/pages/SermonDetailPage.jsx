@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
-import { getSermon, reprocessSermon } from '../api.js'
+import { getSermon, reprocessSermon, renderClip } from '../api.js'
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -89,7 +89,12 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(30)
   const [clipFlags, setClipFlags] = useState(() => loadClipFlags(sermonId))
+  // Set of clip_ids currently being re-rendered on-demand. We poll the
+  // sermon while any of these are in flight and remove ids as their
+  // rendered_video_url comes back updated.
+  const [renderingClipIds, setRenderingClipIds] = useState(() => new Set())
   const pollingRef = useRef(null)
+  const renderPollRef = useRef(null)
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +160,55 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     })
   }
 
+  // Kick off a per-clip render-on-demand. Used by both "Render now"
+  // (no overrides) and Trim (with explicit start/end overrides).
+  async function handleRenderClip(clipId, startSec, endSec) {
+    setRenderingClipIds(prev => new Set(prev).add(clipId))
+    try {
+      await renderClip(clipId, {
+        startSeconds: startSec, endSeconds: endSec,
+      })
+    } catch (e) {
+      setRenderingClipIds(prev => {
+        const next = new Set(prev); next.delete(clipId); return next
+      })
+      return
+    }
+    startRenderPoll()
+  }
+
+  // Poll the sermon every 5s while any clip is rendering. When a clip's
+  // rendered_video_url changes (or render_error appears), remove it from
+  // the rendering set. Stop polling when nothing is in flight.
+  function startRenderPoll() {
+    if (renderPollRef.current) return
+    renderPollRef.current = setInterval(async () => {
+      try {
+        const s = await getSermon(sermonId)
+        const client = clients.find(c => c.id === (clientId || s.client_id))
+        setSermon({ ...s, _clientName: client?.name })
+        setRenderingClipIds(prev => {
+          if (!prev.size) return prev
+          const next = new Set(prev)
+          for (const cid of prev) {
+            const c = (s.clips || []).find(x => x.clip_id === cid)
+            if (c && (c.rendered_video_url || c.render_error)) {
+              next.delete(cid)
+            }
+          }
+          if (next.size === 0) stopRenderPoll()
+          return next
+        })
+      } catch {}
+    }, 5000)
+  }
+  function stopRenderPoll() {
+    if (renderPollRef.current) {
+      clearInterval(renderPollRef.current); renderPollRef.current = null
+    }
+  }
+  useEffect(() => () => stopRenderPoll(), [])
+
   return (
     <div style={{
       flex: 1, overflowY: 'auto',
@@ -182,9 +236,11 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
         <Body
           sermon={sermon}
           clipFlags={clipFlags}
+          renderingClipIds={renderingClipIds}
           onToggleFav={toggleFav}
           onToggleArchived={toggleArchived}
           onReprocess={handleReprocess}
+          onRenderClip={handleRenderClip}
         />
       )}
     </div>
@@ -318,7 +374,7 @@ function FailedState({ sermon, onReprocess }) {
  * Body — split layout with the source on the left, clip rail on the right
  * ========================================================================== */
 
-function Body({ sermon, clipFlags, onToggleFav, onToggleArchived, onReprocess }) {
+function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip }) {
   // Decorate clips with derived fields the UI wants
   const allClips = useMemo(
     () => (sermon.clips || []).map(c => decorateClip(c, clipFlags, sermon.render_options)),
@@ -423,6 +479,7 @@ function Body({ sermon, clipFlags, onToggleFav, onToggleArchived, onReprocess })
         allClips={allClips}
         visibleClips={visibleClips}
         sermon={sermon}
+        renderingClipIds={renderingClipIds}
         filter={filter} setFilter={setFilter}
         sort={sort} setSort={setSort}
         query={query} setQuery={setQuery}
@@ -435,6 +492,7 @@ function Body({ sermon, clipFlags, onToggleFav, onToggleArchived, onReprocess })
         onFav={onToggleFav}
         onArchive={onToggleArchived}
         onReprocess={onReprocess}
+        onRenderClip={onRenderClip}
       />
     </div>
   )
@@ -831,9 +889,9 @@ function Field({ label, value, span, serif }) {
  * ========================================================================== */
 
 function RightColumn({
-  allClips, visibleClips, sermon,
+  allClips, visibleClips, sermon, renderingClipIds,
   filter, setFilter, sort, setSort, query, setQuery,
-  expandedId, onToggle, onSelect, onFav, onArchive, onReprocess,
+  expandedId, onToggle, onSelect, onFav, onArchive, onReprocess, onRenderClip,
 }) {
   async function handleDownloadAll() {
     for (const clip of visibleClips) {
@@ -954,10 +1012,13 @@ function RightColumn({
             clip={c}
             sermonTitle={sermon.title}
             expanded={expandedId === c.id}
+            rendering={renderingClipIds?.has(c.id)}
             onToggle={onToggle}
             onSelect={onSelect}
             onFav={onFav}
             onArchive={onArchive}
+            onRender={(id) => onRenderClip?.(id)}
+            onTrim={(id, startSec, endSec) => onRenderClip?.(id, startSec, endSec)}
           />
         ))}
         {visibleClips.length === 0 && (
@@ -975,9 +1036,10 @@ function RightColumn({
 
 /* ---------- Single clip row (collapsed + expanded) ---------- */
 
-function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArchive }) {
+function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArchive, onRender, onTrim, rendering }) {
   const accent = clip.score === 'High' ? colors.high : colors.med
   const [copied, setCopied] = useState(null) // 'hook' | 'caption' | 'transcript' | null
+  const [trimOpen, setTrimOpen] = useState(false)
 
   function copy(text, key) {
     if (!text) return
@@ -1083,13 +1145,36 @@ function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArc
             </div>
           )}
 
-          {!clip.rendered_video_url && !clip.render_error && (
+          {!clip.rendered_video_url && !clip.render_error && !rendering && (
             <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
               padding: '10px 12px', fontSize: 12, marginBottom: 10,
               color: colors.dim, background: colors.surface, borderRadius: 6,
               fontFamily: FONTS.sans,
             }}>
-              Not rendered yet — this clip came from a "Find more" re-roll. Render on demand is coming soon.
+              <span style={{ flex: 1 }}>Not rendered yet — Find more re-roll. Render this clip now?</span>
+              <button
+                onClick={() => onRender(clip.id)}
+                style={{
+                  background: colors.ink, color: colors.paper, border: 'none',
+                  padding: '5px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 500,
+                  cursor: 'pointer', fontFamily: FONTS.sans,
+                }}
+              >
+                Render now
+              </button>
+            </div>
+          )}
+
+          {rendering && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 12px', fontSize: 12, marginBottom: 10,
+              color: colors.dim, background: colors.surface, borderRadius: 6,
+              fontFamily: FONTS.sans,
+            }}>
+              <Spinner size={14} />
+              <span>Rendering this clip… takes 30-60 seconds.</span>
             </div>
           )}
 
@@ -1142,12 +1227,18 @@ function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArc
           {/* Action row */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             <Action icon="play" label="Play" onClick={() => onSelect(clip.id)} />
-            <Action icon="edit" label="Trim" disabled title="Coming soon — needs render-on-demand backend" />
+            <Action
+              icon="edit"
+              label="Trim"
+              onClick={() => setTrimOpen(true)}
+              disabled={rendering}
+              title={rendering ? 'Wait for current render to finish' : 'Adjust in/out times and re-render'}
+            />
             <Action
               icon="copy"
               label={copied === 'hook' ? 'Copied' : 'Copy hook'}
-              onClick={() => copy(clip.title, 'hook')}
-              disabled={!clip.title}
+              onClick={() => copy(clip.suggested_hook || clip.title, 'hook')}
+              disabled={!(clip.suggested_hook || clip.title)}
             />
             <Action
               icon="copy"
@@ -1172,6 +1263,117 @@ function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArc
           </div>
         </div>
       )}
+
+      {trimOpen && (
+        <TrimModal
+          clip={clip}
+          onClose={() => setTrimOpen(false)}
+          onConfirm={(startSec, endSec) => {
+            setTrimOpen(false)
+            onTrim(clip.id, startSec, endSec)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function TrimModal({ clip, onClose, onConfirm }) {
+  // The clip's stored times come back as HH:MM:SS strings. Edit them
+  // as text inputs — easier than two scrubbers, and faithful to how
+  // the rest of the UI displays time.
+  const [startStr, setStartStr] = useState(clip.start_timestamp || fmtHMS(clip.inSec))
+  const [endStr, setEndStr] = useState(clip.end_timestamp || fmtHMS(clip.outSec))
+  const [error, setError] = useState('')
+
+  function submit() {
+    const s = parseHMS(startStr)
+    const e = parseHMS(endStr)
+    if (!isFinite(s) || !isFinite(e)) {
+      setError('Use HH:MM:SS for both times.')
+      return
+    }
+    if (e <= s) {
+      setError('End time must be after start time.')
+      return
+    }
+    if (e - s > 180) {
+      setError('Clips longer than 3 minutes are not supported.')
+      return
+    }
+    onConfirm(s, e)
+  }
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.4)',
+        display: 'grid', placeItems: 'center', zIndex: 100,
+      }}
+    >
+      <div style={{
+        background: colors.card, borderRadius: 12,
+        border: `1px solid ${colors.line2}`,
+        width: 420, maxWidth: '95vw',
+        fontFamily: FONTS.sans,
+      }}>
+        <div style={{
+          padding: '14px 18px', borderBottom: `1px solid ${colors.line}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: colors.ink }}>Trim clip</div>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: colors.dim, fontSize: 18, padding: 0, lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        <div style={{ padding: 18 }}>
+          <div style={{ fontSize: 12, color: colors.body, marginBottom: 12, lineHeight: 1.5 }}>
+            Adjust the in/out times (HH:MM:SS) and re-render this clip.
+            The rendered video will replace the current one when ready.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <TrimField label="Start" value={startStr} onChange={setStartStr} />
+            <TrimField label="End" value={endStr} onChange={setEndStr} />
+          </div>
+          {error && (
+            <div style={{
+              fontSize: 12, color: '#8b2929', background: '#fbecec',
+              padding: '8px 10px', borderRadius: 6, marginBottom: 12,
+            }}>{error}</div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            <Action label="Cancel" icon="x" onClick={onClose} />
+            <Action label="Trim & re-render" icon="scissors" primary onClick={submit} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TrimField({ label, value, onChange }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
+        letterSpacing: 1.2, marginBottom: 4,
+      }}>
+        {label}
+      </div>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="HH:MM:SS"
+        style={{
+          width: '100%', padding: '8px 10px', boxSizing: 'border-box',
+          background: '#fff', border: `1px solid ${colors.line2}`,
+          borderRadius: 6, fontSize: 13, fontFamily: FONTS.mono,
+          color: colors.ink, outline: 'none',
+        }}
+      />
     </div>
   )
 }
@@ -1231,7 +1433,11 @@ function decorateClip(c, clipFlags, renderOptions) {
   else formats.push('16:9')
   return {
     id: c.clip_id,
-    title: c.suggested_hook || c.transcript?.slice(0, 80) || 'Untitled clip',
+    // The new `title` field is the editorial headline. Fall back to
+    // suggested_hook (or the transcript opener) for clips created
+    // before the field existed.
+    title: c.title || c.suggested_hook || c.transcript?.slice(0, 80) || 'Untitled clip',
+    suggested_hook: c.suggested_hook || '',
     transcript: c.transcript || '',
     suggested_caption: c.suggested_caption || '',
     inSec, outSec, durSec,
