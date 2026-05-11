@@ -160,9 +160,22 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     })
   }
 
-  // Kick off a per-clip render-on-demand. Used by both "Render now"
-  // (no overrides) and Trim (with explicit start/end overrides).
-  async function handleRenderClip(clipId, startSec, endSec) {
+  // pendingRender drives the RenderOptionsModal. When non-null the modal
+  // is open; the user picks vertical / face-tracking / crop and confirms
+  // (or cancels). On confirm we PATCH the new options to the sermon and
+  // then dispatch the actual render. Trim goes around the modal — it
+  // already collected its own context (new in/out) and the user clearly
+  // wants to render NOW with current settings.
+  //
+  // Shape:
+  //   { kind: 'clip', clipId: '...' }
+  //   { kind: 'all' }
+  const [pendingRender, setPendingRender] = useState(null)
+
+  // Actual render dispatchers (no modal). The "request" variants below
+  // gate through the modal first; these are what runs after the user
+  // confirms (or what runs directly for Trim).
+  async function dispatchRenderClip(clipId, startSec, endSec) {
     setRenderingClipIds(prev => new Set(prev).add(clipId))
     try {
       await renderClip(clipId, {
@@ -175,6 +188,62 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
       return
     }
     startRenderPoll()
+  }
+
+  async function dispatchRenderAll() {
+    if (!sermon) return
+    const targets = (sermon.clips || []).filter(c => !c.rendered_video_url)
+    if (!targets.length) return
+    setRenderingClipIds(prev => {
+      const next = new Set(prev)
+      for (const c of targets) next.add(c.clip_id)
+      return next
+    })
+    try {
+      await renderAllClips(sermonId, { onlyHigh: false })
+    } catch (e) {
+      setRenderingClipIds(prev => {
+        const next = new Set(prev)
+        for (const c of targets) next.delete(c.clip_id)
+        return next
+      })
+      window.alert(`Failed to start bulk render: ${e.message || e}`)
+      return
+    }
+    startRenderPoll()
+  }
+
+  // Route a per-clip render request. Trim (overrides present) skips
+  // the options modal and dispatches immediately. Plain "Render now"
+  // (no overrides) opens the modal so the user can confirm/adjust
+  // vertical / face-tracking / crop before the render runs.
+  function handleRenderClipRequest(clipId, startSec, endSec) {
+    if (typeof startSec === 'number' && typeof endSec === 'number') {
+      return dispatchRenderClip(clipId, startSec, endSec)
+    }
+    setPendingRender({ kind: 'clip', clipId })
+  }
+
+  // "Render all" always goes through the modal (no per-clip overrides
+  // to skip with).
+  function handleRenderAllRequest() {
+    setPendingRender({ kind: 'all' })
+  }
+
+  // The modal calls this on confirm. PATCH the new options to the
+  // sermon (so the saved defaults stay in sync), then dispatch the
+  // pending render. The modal closes on success; on failure the
+  // modal stays open and surfaces the error.
+  async function handleConfirmRender(optsPatch) {
+    if (!pendingRender) return
+    await handlePatchRenderOptions(optsPatch)
+    const p = pendingRender
+    setPendingRender(null)
+    if (p.kind === 'clip') {
+      await dispatchRenderClip(p.clipId)
+    } else if (p.kind === 'all') {
+      await dispatchRenderAll()
+    }
   }
 
   // Patch the sermon's render_options. Partial: only the fields in
@@ -205,37 +274,6 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     }
     await load()
     return created
-  }
-
-  // Bulk-render every unrendered clip on the sermon, sequentially on
-  // the backend. We mark all currently-unrendered clip ids as
-  // rendering so the existing poll watches them.
-  async function handleRenderAll({ onlyHigh = false } = {}) {
-    if (!sermon) return
-    const targets = (sermon.clips || []).filter(c => {
-      if (c.rendered_video_url) return false
-      if (onlyHigh && c.strength !== 'high') return false
-      return true
-    })
-    if (!targets.length) return
-    setRenderingClipIds(prev => {
-      const next = new Set(prev)
-      for (const c of targets) next.add(c.clip_id)
-      return next
-    })
-    try {
-      await renderAllClips(sermonId, { onlyHigh })
-    } catch (e) {
-      // Roll back the optimistic in-flight set if the kick-off failed.
-      setRenderingClipIds(prev => {
-        const next = new Set(prev)
-        for (const c of targets) next.delete(c.clip_id)
-        return next
-      })
-      window.alert(`Failed to start bulk render: ${e.message || e}`)
-      return
-    }
-    startRenderPoll()
   }
 
   // Poll the sermon every 5s while any clip is rendering. When a clip's
@@ -301,10 +339,18 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
           onToggleFav={toggleFav}
           onToggleArchived={toggleArchived}
           onReprocess={handleReprocess}
-          onRenderClip={handleRenderClip}
+          onRenderClip={handleRenderClipRequest}
           onCreateCustomClip={handleCreateCustomClip}
-          onRenderAll={handleRenderAll}
-          onPatchRenderOptions={handlePatchRenderOptions}
+          onRenderAll={handleRenderAllRequest}
+        />
+      )}
+
+      {pendingRender && sermon && (
+        <RenderOptionsModal
+          sermon={sermon}
+          pending={pendingRender}
+          onClose={() => setPendingRender(null)}
+          onConfirm={handleConfirmRender}
         />
       )}
     </div>
@@ -438,7 +484,7 @@ function FailedState({ sermon, onReprocess }) {
  * Body — split layout with the source on the left, clip rail on the right
  * ========================================================================== */
 
-function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll, onPatchRenderOptions }) {
+function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll }) {
   // Decorate clips with derived fields the UI wants
   const allClips = useMemo(
     () => (sermon.clips || []).map(c => decorateClip(c, clipFlags, sermon.render_options)),
@@ -550,7 +596,6 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
         setLeftTab={setLeftTab}
         playerRef={playerRef}
         playToken={playToken}
-        onPatchRenderOptions={onPatchRenderOptions}
       />
       <RightColumn
         allClips={allClips}
@@ -582,7 +627,7 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
  * Left column — video, clip-map strip, tabs
  * ========================================================================== */
 
-function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, leftTab, setLeftTab, playerRef, playToken, onPatchRenderOptions }) {
+function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, leftTab, setLeftTab, playerRef, playToken }) {
   return (
     <div style={{
       padding: '20px 24px 20px 28px',
@@ -607,7 +652,7 @@ function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, le
       <div style={{ padding: '4px 2px 24px' }}>
         {leftTab === 'overview' && <OverviewTab sermon={sermon} clips={clips} />}
         {leftTab === 'transcript' && <TranscriptTab sermon={sermon} />}
-        {leftTab === 'details' && <DetailsTab sermon={sermon} onPatch={onPatchRenderOptions} />}
+        {leftTab === 'details' && <DetailsTab sermon={sermon} />}
       </div>
     </div>
   )
@@ -939,107 +984,44 @@ function TranscriptTab({ sermon }) {
   )
 }
 
-function DetailsTab({ sermon, onPatch }) {
-  // These options live on the sermon row (sermon.render_options_json on
-  // the backend) and apply to every future Render now / Render all /
-  // Trim. Editing here is a partial PATCH — only the touched field is
-  // written. The parent updates local sermon state optimistically, so
-  // toggles feel instant.
+function DetailsTab({ sermon }) {
+  // Read-only view of the sermon's current render settings (the
+  // defaults that the next Render now / Render all will start from).
+  // Editing happens in the RenderOptionsModal that pops up when the
+  // user clicks Render now or Render all — not here. This tab just
+  // confirms the current state.
   const opts = sermon.render_options || {}
-  const [pending, setPending] = useState(false)
-  const vertical = !!opts.vertical
-  // face_tracking defaults to true server-side when omitted; mirror that
-  // so the toggle reflects the actual render behavior.
-  const faceTracking = opts.face_tracking !== false
-  // crop_lower_third tristate: true / false / null(=auto)
-  const cropLowerThird =
-    opts.crop_lower_third === true ? 'on' :
-    opts.crop_lower_third === false ? 'off' :
-    'auto'
-
-  async function patch(field, value) {
-    if (pending || !onPatch) return
-    setPending(true)
-    try {
-      await onPatch({ [field]: value })
-    } catch (e) {
-      // Parent surfaces the error via alert; nothing else to do here.
-    } finally {
-      setPending(false)
-    }
-  }
-
   return (
-    <div style={{ display: 'grid', gap: 22 }}>
-      <div>
-        <div style={{
-          fontSize: 11, color: colors.muted, textTransform: 'uppercase',
-          letterSpacing: 1.2, marginBottom: 10, fontFamily: FONTS.sans,
-        }}>
-          Render settings
-        </div>
-        <div style={{ fontSize: 12, color: colors.body, marginBottom: 14, lineHeight: 1.5 }}>
-          These apply to every future Render now / Render all / Trim on
-          this sermon. Changes save automatically and take effect on the
-          next render.
-        </div>
-
-        <DetailToggle
-          checked={vertical}
-          onChange={(v) => patch('vertical', v)}
-          disabled={pending}
-          label="Vertical (9:16)"
-          hint="Reframe each clip to portrait for Reels / TikTok / Shorts."
-        />
-        <div style={{
-          paddingLeft: 22, marginLeft: 6, marginTop: 8,
-          borderLeft: `2px solid ${colors.line2}`,
-          display: 'grid', gap: 14,
-          opacity: vertical ? 1 : 0.45,
-          pointerEvents: vertical ? 'auto' : 'none',
-          transition: 'opacity 0.15s',
-        }}>
-          <DetailToggle
-            checked={faceTracking}
-            onChange={(v) => patch('face_tracking', v)}
-            disabled={pending}
-            label="Follow speaker with AI"
-            hint="Face tracking keeps the speaker centered. Off = static center crop."
-          />
-          <div>
-            <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans }}>
-              Crop lower third
-            </div>
-            <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 2, marginBottom: 8, lineHeight: 1.45 }}>
-              Drop the bottom 30% before reframing if the source has a banner/text overlay.
-            </div>
-            <DetailSegmented
-              value={cropLowerThird}
-              onChange={(v) => patch(
-                'crop_lower_third',
-                v === 'auto' ? null : v === 'on',
-              )}
-              disabled={pending}
-              options={[
-                { value: 'auto', label: 'Auto' },
-                { value: 'on', label: 'On' },
-                { value: 'off', label: 'Off' },
-              ]}
-            />
-          </div>
-        </div>
+    <div style={{ display: 'grid', gap: 18 }}>
+      <div style={{ fontSize: 12, color: colors.body, lineHeight: 1.55 }}>
+        These are the current render defaults for this sermon. Change
+        them on the next Render now / Render all — the modal will
+        pre-fill with these values.
       </div>
-
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18,
-        paddingTop: 14, borderTop: `1px solid ${colors.line}`,
-      }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+        <Field label="Output" value={opts.vertical ? 'Vertical 9:16' : 'Horizontal 16:9'} />
+        <Field
+          label="Face tracking"
+          value={
+            opts.vertical
+              ? (opts.face_tracking === false ? 'Off (static center)' : 'AI auto-frame')
+              : '—'
+          }
+        />
+        <Field
+          label="Lower-third"
+          value={
+            opts.crop_lower_third === true ? 'Cropped (forced)' :
+            opts.crop_lower_third === false ? 'Not cropped' :
+            opts.vertical ? 'Auto-detect' : '—'
+          }
+        />
         <Field label="Captions" value="Karaoke (auto-burned)" />
-        <Field label="Status" value={sermon.status} />
         <Field
           label="Processed at"
           value={sermon.processed_at ? new Date(sermon.processed_at).toLocaleString() : '—'}
         />
+        <Field label="Status" value={sermon.status} />
       </div>
     </div>
   )
@@ -1829,6 +1811,171 @@ function TrimField({ label, value, onChange }) {
     </div>
   )
 }
+
+function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
+  // Pre-fill from the sermon's current saved options so the user sees
+  // what would happen if they hit Render right now. Each render flow
+  // pops this modal — they can tweak and confirm, the new options
+  // PATCH back to the sermon (sticky for next time) and the render
+  // fires.
+  const initial = sermon?.render_options || {}
+  const [vertical, setVertical] = useState(!!initial.vertical)
+  const [faceTracking, setFaceTracking] = useState(initial.face_tracking !== false)
+  const [crop, setCrop] = useState(
+    initial.crop_lower_third === true ? 'on' :
+    initial.crop_lower_third === false ? 'off' :
+    'auto'
+  )
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const isAll = pending?.kind === 'all'
+  const clip = !isAll
+    ? (sermon?.clips || []).find(c => c.clip_id === pending?.clipId)
+    : null
+  const unrenderedCount = isAll
+    ? (sermon?.clips || []).filter(c => !c.rendered_video_url).length
+    : 0
+
+  const title = isAll
+    ? `Render ${unrenderedCount} unrendered clip${unrenderedCount !== 1 ? 's' : ''}`
+    : 'Render this clip'
+
+  async function submit() {
+    setError('')
+    setSubmitting(true)
+    try {
+      await onConfirm({
+        vertical,
+        face_tracking: faceTracking,
+        crop_lower_third: crop === 'auto' ? null : crop === 'on',
+      })
+      // Parent closes the modal on success.
+    } catch (e) {
+      setError(e?.message || String(e))
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.4)',
+        display: 'grid', placeItems: 'center', zIndex: 100,
+      }}
+    >
+      <div style={{
+        background: colors.card, borderRadius: 12,
+        border: `1px solid ${colors.line2}`,
+        width: 480, maxWidth: '95vw',
+        fontFamily: FONTS.sans,
+      }}>
+        <div style={{
+          padding: '14px 18px', borderBottom: `1px solid ${colors.line}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: colors.ink }}>{title}</div>
+          <button onClick={onClose} disabled={submitting} style={{
+            background: 'none', border: 'none', cursor: submitting ? 'wait' : 'pointer',
+            color: colors.dim, fontSize: 18, padding: 0, lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        <div style={{ padding: 18 }}>
+          {clip?.title && (
+            <div style={{
+              fontFamily: FONTS.serif, fontSize: 16, color: colors.ink,
+              marginBottom: 10,
+            }}>
+              "{clip.title}"
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: colors.body, marginBottom: 16, lineHeight: 1.5 }}>
+            Pick how this clip should render. Your settings save to the
+            sermon — the next Render now / Render all will pre-fill with
+            these.
+          </div>
+
+          <DetailToggle
+            checked={vertical}
+            onChange={setVertical}
+            disabled={submitting}
+            label="Vertical (9:16)"
+            hint="Reframe to portrait for Reels / TikTok / Shorts. Off = 16:9 horizontal."
+          />
+          <div style={{
+            paddingLeft: 22, marginLeft: 6, marginTop: 10,
+            borderLeft: `2px solid ${colors.line2}`,
+            display: 'grid', gap: 14,
+            opacity: vertical ? 1 : 0.4,
+            pointerEvents: vertical ? 'auto' : 'none',
+            transition: 'opacity 0.15s',
+          }}>
+            <DetailToggle
+              checked={faceTracking}
+              onChange={setFaceTracking}
+              disabled={submitting}
+              label="Follow speaker with AI"
+              hint="Face tracking keeps the speaker centered. Off = static center crop."
+            />
+            <div>
+              <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans }}>
+                Crop lower third
+              </div>
+              <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 2, marginBottom: 8, lineHeight: 1.45 }}>
+                Drop the bottom 30% before reframing if the source has a banner/text overlay.
+              </div>
+              <DetailSegmented
+                value={crop}
+                onChange={setCrop}
+                disabled={submitting}
+                options={[
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'on', label: 'On' },
+                  { value: 'off', label: 'Off' },
+                ]}
+              />
+            </div>
+          </div>
+
+          <div style={{
+            marginTop: 16, paddingTop: 14,
+            borderTop: `1px solid ${colors.line}`,
+          }}>
+            <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans }}>
+              Captions: <span style={{ color: colors.body, fontWeight: 400 }}>Karaoke (auto-burned)</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 2, lineHeight: 1.45 }}>
+              Custom fonts, colors, and caption templates are coming soon.
+            </div>
+          </div>
+
+          {error && (
+            <div style={{
+              fontSize: 12, color: '#8b2929', background: '#fbecec',
+              padding: '8px 10px', borderRadius: 6, marginTop: 14,
+            }}>{error}</div>
+          )}
+
+          <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            <Action label="Cancel" icon="x" onClick={onClose} disabled={submitting} />
+            <Action
+              label={submitting
+                ? 'Starting…'
+                : (isAll ? `Render ${unrenderedCount}` : 'Render')}
+              icon="play"
+              primary
+              onClick={submit}
+              disabled={submitting || (isAll && unrenderedCount === 0)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 function ScoreBadge({ accent, score }) {
   return (
