@@ -77,8 +77,11 @@ export function SermonRow({ sermon, onClick, onDelete }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: hover || deleting ? 1 : 0,
-            transition: 'opacity 0.1s, background 0.1s',
+            // Always visible — faint when the row isn't hovered, full
+            // opacity when it is. Hover-only-reveal made the button
+            // invisible to users who didn't know to look for it.
+            opacity: deleting ? 1 : (hover ? 1 : 0.55),
+            transition: 'opacity 0.1s, background 0.1s, color 0.1s',
             color: 'var(--text-3)',
             marginLeft: 4,
           }}

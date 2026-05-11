@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Topbar, Card, CardHeader, StatCard, EmptyState, Btn, Spinner } from '../components/ui.jsx'
 import { SermonRow } from '../components/SermonRow.jsx'
-import { getClientSermons } from '../api.js'
+import { getClientSermons, deleteSermon } from '../api.js'
 
 export function DashboardPage({ clients, onNavigate, onSubmit }) {
   const [sermons, setSermons] = useState([])
@@ -24,6 +24,17 @@ export function DashboardPage({ clients, onNavigate, onSubmit }) {
     }
     load()
   }, [clients])
+
+  async function handleDelete(sermon) {
+    const prev = sermons
+    setSermons(sermons.filter(s => s.sermon_id !== sermon.sermon_id))
+    try {
+      await deleteSermon(sermon.sermon_id)
+    } catch (e) {
+      setSermons(prev)
+      window.alert(`Failed to delete sermon: ${e.message || e}`)
+    }
+  }
 
   const totalClips = sermons.reduce((a, s) => a + (s.clips_found || 0), 0)
   const processing = sermons.filter(s => s.status === 'processing').length
@@ -58,6 +69,7 @@ export function DashboardPage({ clients, onNavigate, onSubmit }) {
                       key={s.sermon_id}
                       sermon={s}
                       onClick={() => onNavigate('sermon-detail', s.sermon_id, s._clientId)}
+                      onDelete={handleDelete}
                     />
                   ))
                 : <EmptyState message="No sermons yet" />
