@@ -2,6 +2,14 @@ import React, { useState } from 'react'
 import { Modal, FormGroup, Input, Select, Btn } from './ui.jsx'
 import { submitSermon, submitSermonVideo } from '../api.js'
 
+// Render options used to live on this modal, but with deferred-render
+// as the default they aren't consumed at submit time — they sit on
+// the sermon row and only get read when the user clicks Render now /
+// Render all / Trim later. Editing them at submit forced the user to
+// commit before seeing the clips. They now live on the
+// SermonDetailPage "Render settings" tab and PATCH via
+// /sermon/{id}/render-options.
+
 export function SubmitModal({ open, onClose, clients, onSubmitted }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
@@ -11,12 +19,10 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Pipeline + render options (Phase 4)
+  // Pipeline still lives here — it determines which API endpoint to
+  // call (/process-sermon-video vs /process-sermon) and isn't editable
+  // after the fact.
   const [pipeline, setPipeline] = useState('video') // 'video' | 'audio'
-  const [vertical, setVertical] = useState(false)
-  const [faceTracking, setFaceTracking] = useState(true)
-  // crop_lower_third on the API is tristate: null/omitted=auto, true=on, false=off
-  const [cropLowerThird, setCropLowerThird] = useState('auto') // 'auto' | 'on' | 'off'
 
   React.useEffect(() => {
     if (clients.length) setClientId(clients[0].id)
@@ -42,19 +48,12 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
     try {
       let result
       if (pipeline === 'video') {
-        const render_options = {
-          vertical,
-          // Only send vertical-dependent flags if vertical is on
-          ...(vertical && { face_tracking: faceTracking }),
-          // For crop_lower_third: 'auto' → omit so the backend
-          // auto-detects; 'on' → true; 'off' → false.
-          ...(vertical && cropLowerThird !== 'auto' && {
-            crop_lower_third: cropLowerThird === 'on',
-          }),
-        }
+        // No render_options sent — the sermon row gets backend defaults
+        // (horizontal, face_tracking on, auto-detect lower-third) and
+        // the user can edit them on the detail page after Claude finishes.
         result = await submitSermonVideo({
           client_id: clientId, sermon_title: title, sermon_date: date,
-          file_url: url, render_options,
+          file_url: url,
         })
       } else {
         result = await submitSermon({
@@ -109,7 +108,7 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
         <div style={{ display: 'flex', gap: 16 }}>
           <PipelineRadio
             label="Video"
-            sub="MP4 → clips with captions, optionally vertical"
+            sub="MP4 → clips with captions, render settings editable after submit"
             checked={pipeline === 'video'}
             onChange={() => setPipeline('video')}
           />
@@ -125,53 +124,6 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
       <FormGroup label={pipeline === 'video' ? 'Video file URL' : 'Audio file URL'}>
         <Input value={url} onChange={e => setUrl(e.target.value)} placeholder={urlHint} />
       </FormGroup>
-
-      {pipeline === 'video' && (
-        <FormGroup label="Render options">
-          <div style={{
-            display: 'grid', gap: 8,
-            border: '1px solid var(--border)', borderRadius: 8,
-            padding: '12px',
-            background: 'var(--surface-2)',
-          }}>
-            <Toggle
-              checked={vertical}
-              onChange={setVertical}
-              label="Vertical (9:16)"
-              hint="Reframe each clip to portrait for Reels / TikTok / Shorts."
-            />
-            <div style={{
-              opacity: vertical ? 1 : 0.4,
-              pointerEvents: vertical ? 'auto' : 'none',
-              paddingLeft: 24, display: 'grid', gap: 8,
-              borderLeft: '2px solid var(--border)',
-              marginLeft: 4,
-            }}>
-              <Toggle
-                checked={faceTracking}
-                onChange={setFaceTracking}
-                label="Follow speaker with AI"
-                hint="Uses face tracking to keep the speaker centered. Off = static center crop."
-              />
-              <div style={{ display: 'grid', gap: 4 }}>
-                <div style={{ fontSize: 13, color: 'var(--text)' }}>Crop lower third</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                  Drop the bottom 30% before reframing if the source has a banner/text overlay.
-                </div>
-                <SegmentedRadio
-                  value={cropLowerThird}
-                  onChange={setCropLowerThird}
-                  options={[
-                    { value: 'auto', label: 'Auto', hint: 'Detect overlays in the source' },
-                    { value: 'on', label: 'On', hint: 'Always crop' },
-                    { value: 'off', label: 'Off', hint: 'Never crop' },
-                  ]}
-                />
-              </div>
-            </div>
-          </div>
-        </FormGroup>
-      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '1rem 0' }}>
         <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
@@ -227,63 +179,5 @@ function PipelineRadio({ label, sub, checked, onChange }) {
         <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{sub}</div>
       </div>
     </label>
-  )
-}
-
-function Toggle({ checked, onChange, label, hint }) {
-  return (
-    <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        style={{ marginTop: 3 }}
-      />
-      <div>
-        <div style={{ fontSize: 13, color: 'var(--text)' }}>{label}</div>
-        {hint && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{hint}</div>}
-      </div>
-    </label>
-  )
-}
-
-function SegmentedRadio({ value, onChange, options }) {
-  return (
-    <div
-      role="radiogroup"
-      style={{
-        display: 'inline-flex',
-        border: '1px solid var(--border-mid)',
-        borderRadius: 8, overflow: 'hidden',
-        background: 'var(--surface)',
-        marginTop: 4,
-      }}
-    >
-      {options.map((opt, i) => {
-        const selected = opt.value === value
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            title={opt.hint}
-            onClick={() => onChange(opt.value)}
-            style={{
-              padding: '6px 14px',
-              fontSize: 12, fontWeight: 500,
-              border: 'none',
-              borderLeft: i === 0 ? 'none' : '1px solid var(--border-mid)',
-              background: selected ? 'var(--text)' : 'transparent',
-              color: selected ? '#fff' : 'var(--text-2)',
-              cursor: 'pointer',
-              transition: 'background 0.12s, color 0.12s',
-            }}
-          >
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
   )
 }

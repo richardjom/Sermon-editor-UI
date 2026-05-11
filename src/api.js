@@ -115,6 +115,29 @@ export async function renderAllClips(sermonId, { onlyHigh = false } = {}) {
   return res.json()
 }
 
+// Partial-update of a sermon's render_options. Only fields present
+// in the `patch` object are written; absent fields keep their
+// existing value. Used by the post-submit "Render settings" tab so
+// the user can edit options after seeing the clips, rather than
+// committing at submit time.
+//
+// Examples:
+//   updateRenderOptions(id, { vertical: true })            // turn vertical on
+//   updateRenderOptions(id, { face_tracking: false })      // disable face tracking
+//   updateRenderOptions(id, { crop_lower_third: null })    // back to auto-detect
+export async function updateRenderOptions(sermonId, patch) {
+  const res = await fetch(`${BASE}/sermon/${sermonId}/render-options`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch || {}),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status}: ${text || 'render-options update failed'}`)
+  }
+  return res.json()
+}
+
 // Hard-delete a sermon, its clips, and its R2 storage. Notion clip
 // pages are intentionally NOT touched; archive those manually if
 // needed.

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
-import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips } from '../api.js'
+import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions } from '../api.js'
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -177,6 +177,21 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     startRenderPoll()
   }
 
+  // Patch the sermon's render_options. Partial: only the fields in
+  // `patch` are written, others stay. After success, optimistically
+  // update the local sermon copy so toggles feel instant — no need to
+  // round-trip a full GET /sermon/{id}.
+  async function handlePatchRenderOptions(patch) {
+    try {
+      const result = await updateRenderOptions(sermonId, patch)
+      setSermon(prev => prev ? { ...prev, render_options: result.render_options } : prev)
+      return result
+    } catch (e) {
+      window.alert(`Failed to update render options: ${e.message || e}`)
+      throw e
+    }
+  }
+
   // Create a custom clip at a user-supplied range. The backend snaps
   // to word boundaries and inserts a Clip row; we reload the sermon so
   // the new clip shows up, and if render was requested, mark it
@@ -289,6 +304,7 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
           onRenderClip={handleRenderClip}
           onCreateCustomClip={handleCreateCustomClip}
           onRenderAll={handleRenderAll}
+          onPatchRenderOptions={handlePatchRenderOptions}
         />
       )}
     </div>
@@ -422,7 +438,7 @@ function FailedState({ sermon, onReprocess }) {
  * Body — split layout with the source on the left, clip rail on the right
  * ========================================================================== */
 
-function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll }) {
+function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll, onPatchRenderOptions }) {
   // Decorate clips with derived fields the UI wants
   const allClips = useMemo(
     () => (sermon.clips || []).map(c => decorateClip(c, clipFlags, sermon.render_options)),
@@ -534,6 +550,7 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
         setLeftTab={setLeftTab}
         playerRef={playerRef}
         playToken={playToken}
+        onPatchRenderOptions={onPatchRenderOptions}
       />
       <RightColumn
         allClips={allClips}
@@ -565,7 +582,7 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
  * Left column — video, clip-map strip, tabs
  * ========================================================================== */
 
-function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, leftTab, setLeftTab, playerRef, playToken }) {
+function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, leftTab, setLeftTab, playerRef, playToken, onPatchRenderOptions }) {
   return (
     <div style={{
       padding: '20px 24px 20px 28px',
@@ -590,7 +607,7 @@ function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, le
       <div style={{ padding: '4px 2px 24px' }}>
         {leftTab === 'overview' && <OverviewTab sermon={sermon} clips={clips} />}
         {leftTab === 'transcript' && <TranscriptTab sermon={sermon} />}
-        {leftTab === 'details' && <DetailsTab sermon={sermon} />}
+        {leftTab === 'details' && <DetailsTab sermon={sermon} onPatch={onPatchRenderOptions} />}
       </div>
     </div>
   )
@@ -922,26 +939,176 @@ function TranscriptTab({ sermon }) {
   )
 }
 
-function DetailsTab({ sermon }) {
+function DetailsTab({ sermon, onPatch }) {
+  // These options live on the sermon row (sermon.render_options_json on
+  // the backend) and apply to every future Render now / Render all /
+  // Trim. Editing here is a partial PATCH — only the touched field is
+  // written. The parent updates local sermon state optimistically, so
+  // toggles feel instant.
   const opts = sermon.render_options || {}
+  const [pending, setPending] = useState(false)
+  const vertical = !!opts.vertical
+  // face_tracking defaults to true server-side when omitted; mirror that
+  // so the toggle reflects the actual render behavior.
+  const faceTracking = opts.face_tracking !== false
+  // crop_lower_third tristate: true / false / null(=auto)
+  const cropLowerThird =
+    opts.crop_lower_third === true ? 'on' :
+    opts.crop_lower_third === false ? 'off' :
+    'auto'
+
+  async function patch(field, value) {
+    if (pending || !onPatch) return
+    setPending(true)
+    try {
+      await onPatch({ [field]: value })
+    } catch (e) {
+      // Parent surfaces the error via alert; nothing else to do here.
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-      <Field label="Output" value={opts.vertical ? 'Vertical 9:16' : 'Horizontal 16:9'} />
-      <Field label="Face tracking" value={opts.vertical ? (opts.face_tracking === false ? 'Off (static center)' : 'AI auto-frame') : '—'} />
-      <Field
-        label="Lower-third"
-        value={
-          opts.crop_lower_third === true ? 'Cropped (forced)' :
-          opts.crop_lower_third === false ? 'Not cropped' :
-          opts.vertical ? 'Auto-detect' : '—'
-        }
+    <div style={{ display: 'grid', gap: 22 }}>
+      <div>
+        <div style={{
+          fontSize: 11, color: colors.muted, textTransform: 'uppercase',
+          letterSpacing: 1.2, marginBottom: 10, fontFamily: FONTS.sans,
+        }}>
+          Render settings
+        </div>
+        <div style={{ fontSize: 12, color: colors.body, marginBottom: 14, lineHeight: 1.5 }}>
+          These apply to every future Render now / Render all / Trim on
+          this sermon. Changes save automatically and take effect on the
+          next render.
+        </div>
+
+        <DetailToggle
+          checked={vertical}
+          onChange={(v) => patch('vertical', v)}
+          disabled={pending}
+          label="Vertical (9:16)"
+          hint="Reframe each clip to portrait for Reels / TikTok / Shorts."
+        />
+        <div style={{
+          paddingLeft: 22, marginLeft: 6, marginTop: 8,
+          borderLeft: `2px solid ${colors.line2}`,
+          display: 'grid', gap: 14,
+          opacity: vertical ? 1 : 0.45,
+          pointerEvents: vertical ? 'auto' : 'none',
+          transition: 'opacity 0.15s',
+        }}>
+          <DetailToggle
+            checked={faceTracking}
+            onChange={(v) => patch('face_tracking', v)}
+            disabled={pending}
+            label="Follow speaker with AI"
+            hint="Face tracking keeps the speaker centered. Off = static center crop."
+          />
+          <div>
+            <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans }}>
+              Crop lower third
+            </div>
+            <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 2, marginBottom: 8, lineHeight: 1.45 }}>
+              Drop the bottom 30% before reframing if the source has a banner/text overlay.
+            </div>
+            <DetailSegmented
+              value={cropLowerThird}
+              onChange={(v) => patch(
+                'crop_lower_third',
+                v === 'auto' ? null : v === 'on',
+              )}
+              disabled={pending}
+              options={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'on', label: 'On' },
+                { value: 'off', label: 'Off' },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18,
+        paddingTop: 14, borderTop: `1px solid ${colors.line}`,
+      }}>
+        <Field label="Captions" value="Karaoke (auto-burned)" />
+        <Field label="Status" value={sermon.status} />
+        <Field
+          label="Processed at"
+          value={sermon.processed_at ? new Date(sermon.processed_at).toLocaleString() : '—'}
+        />
+      </div>
+    </div>
+  )
+}
+
+function DetailToggle({ checked, onChange, disabled, label, hint }) {
+  return (
+    <label style={{
+      display: 'flex', gap: 12, alignItems: 'flex-start',
+      cursor: disabled ? 'wait' : 'pointer',
+      opacity: disabled ? 0.7 : 1,
+    }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ marginTop: 3, accentColor: colors.ink, cursor: 'inherit' }}
       />
-      <Field label="Captions" value="Karaoke (auto-burned)" />
-      <Field
-        label="Processed at"
-        value={sermon.processed_at ? new Date(sermon.processed_at).toLocaleString() : '—'}
-      />
-      <Field label="Status" value={sermon.status} />
+      <div>
+        <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans }}>{label}</div>
+        {hint && (
+          <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 2, lineHeight: 1.45 }}>
+            {hint}
+          </div>
+        )}
+      </div>
+    </label>
+  )
+}
+
+function DetailSegmented({ value, onChange, disabled, options }) {
+  return (
+    <div
+      role="radiogroup"
+      style={{
+        display: 'inline-flex',
+        border: `1px solid ${colors.line2}`,
+        borderRadius: 7, overflow: 'hidden',
+        background: colors.card,
+        opacity: disabled ? 0.7 : 1,
+      }}
+    >
+      {options.map((opt, i) => {
+        const selected = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            disabled={disabled}
+            onClick={() => !disabled && onChange(opt.value)}
+            style={{
+              padding: '6px 14px',
+              fontSize: 12, fontWeight: 500,
+              border: 'none',
+              borderLeft: i === 0 ? 'none' : `1px solid ${colors.line2}`,
+              background: selected ? colors.ink : 'transparent',
+              color: selected ? colors.paper : colors.body,
+              cursor: disabled ? 'wait' : 'pointer',
+              fontFamily: FONTS.sans,
+              transition: 'background 0.12s, color 0.12s',
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
