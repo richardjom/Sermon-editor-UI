@@ -422,6 +422,17 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
 
   // Keyboard shortcuts: ↑/↓ navigate, Space play, / search, S star, E archive
   const playerRef = useRef(null)
+
+  // Bumped each time the user clicks the Play action on a clip row.
+  // VideoPlayer watches this counter and (re)seeks + plays. Decoupled
+  // from selectedId so clicking Play on the already-selected clip
+  // restarts it instead of being a no-op.
+  const [playToken, setPlayToken] = useState(0)
+  function onPlayClip(id) {
+    setSelectedId(id)
+    setExpandedId(id)
+    setPlayToken(t => t + 1)
+  }
   useEffect(() => {
     function onKey(e) {
       const tag = (e.target?.tagName || '').toLowerCase()
@@ -474,6 +485,7 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
         leftTab={leftTab}
         setLeftTab={setLeftTab}
         playerRef={playerRef}
+        playToken={playToken}
       />
       <RightColumn
         allClips={allClips}
@@ -489,6 +501,7 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
           setSelectedId(id)
         }}
         onSelect={(id) => setSelectedId(id)}
+        onPlay={onPlayClip}
         onFav={onToggleFav}
         onArchive={onToggleArchived}
         onReprocess={onReprocess}
@@ -502,7 +515,7 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
  * Left column — video, clip-map strip, tabs
  * ========================================================================== */
 
-function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, leftTab, setLeftTab, playerRef }) {
+function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, leftTab, setLeftTab, playerRef, playToken }) {
   return (
     <div style={{
       padding: '20px 24px 20px 28px',
@@ -514,6 +527,7 @@ function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, le
         selectedClip={selectedClip}
         selectedId={selectedId}
         playerRef={playerRef}
+        playToken={playToken}
       />
       <ClipMapStrip
         sermon={sermon}
@@ -534,7 +548,7 @@ function LeftColumn({ sermon, clips, selectedClip, selectedId, setSelectedId, le
 
 /* ---------- Video player with custom controls ---------- */
 
-function VideoPlayer({ sermon, clips, selectedClip, selectedId, playerRef }) {
+function VideoPlayer({ sermon, clips, selectedClip, selectedId, playerRef, playToken }) {
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(sermon.duration_seconds || 0)
@@ -550,6 +564,24 @@ function VideoPlayer({ sermon, clips, selectedClip, selectedId, playerRef }) {
       v.currentTime = Math.max(0, selectedClip.inSec + 0.05)
     }
   }, [selectedId])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When the user clicks the Play action on a clip row (which bumps
+  // playToken), seek to that clip's start AND start playback. Decoupled
+  // from selectedId so clicking Play on the already-selected clip
+  // restarts it instead of being a no-op.
+  useEffect(() => {
+    if (playToken && selectedClip && playerRef.current) {
+      const v = playerRef.current
+      v.currentTime = Math.max(0, selectedClip.inSec + 0.05)
+      const p = v.play()
+      if (p && typeof p.catch === 'function') {
+        // Autoplay can be blocked by the browser if the user hasn't
+        // interacted yet. Swallow the rejection — the user can press
+        // the main Play button to recover.
+        p.catch(() => {})
+      }
+    }
+  }, [playToken])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleTimeUpdate() {
     if (playerRef.current) setCurrentTime(playerRef.current.currentTime)
@@ -891,7 +923,7 @@ function Field({ label, value, span, serif }) {
 function RightColumn({
   allClips, visibleClips, sermon, renderingClipIds,
   filter, setFilter, sort, setSort, query, setQuery,
-  expandedId, onToggle, onSelect, onFav, onArchive, onReprocess, onRenderClip,
+  expandedId, onToggle, onSelect, onPlay, onFav, onArchive, onReprocess, onRenderClip,
 }) {
   async function handleDownloadAll() {
     for (const clip of visibleClips) {
@@ -1015,6 +1047,7 @@ function RightColumn({
             rendering={renderingClipIds?.has(c.id)}
             onToggle={onToggle}
             onSelect={onSelect}
+            onPlay={onPlay}
             onFav={onFav}
             onArchive={onArchive}
             onRender={(id) => onRenderClip?.(id)}
@@ -1036,7 +1069,7 @@ function RightColumn({
 
 /* ---------- Single clip row (collapsed + expanded) ---------- */
 
-function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArchive, onRender, onTrim, rendering }) {
+function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onPlay, onFav, onArchive, onRender, onTrim, rendering }) {
   const accent = clip.score === 'High' ? colors.high : colors.med
   const [copied, setCopied] = useState(null) // 'hook' | 'caption' | 'transcript' | null
   const [trimOpen, setTrimOpen] = useState(false)
@@ -1226,7 +1259,7 @@ function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onFav, onArc
 
           {/* Action row */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            <Action icon="play" label="Play" onClick={() => onSelect(clip.id)} />
+            <Action icon="play" label="Play" onClick={() => onPlay?.(clip.id)} />
             <Action
               icon="edit"
               label="Trim"
