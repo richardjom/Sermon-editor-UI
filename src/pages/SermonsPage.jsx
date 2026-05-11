@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Topbar, Card, EmptyState, Btn, Spinner } from '../components/ui.jsx'
 import { SermonRow } from '../components/SermonRow.jsx'
-import { getClientSermons } from '../api.js'
+import { getClientSermons, deleteSermon } from '../api.js'
 
 export function SermonsPage({ clients, onNavigate, onSubmit }) {
   const [sermons, setSermons] = useState([])
@@ -25,6 +25,19 @@ export function SermonsPage({ clients, onNavigate, onSubmit }) {
     load()
   }, [clients])
 
+  async function handleDelete(sermon) {
+    // Optimistic remove — restore if the DELETE fails so the user sees
+    // the row come back rather than thinking it worked silently.
+    const prev = sermons
+    setSermons(sermons.filter(s => s.sermon_id !== sermon.sermon_id))
+    try {
+      await deleteSermon(sermon.sermon_id)
+    } catch (e) {
+      setSermons(prev)
+      window.alert(`Failed to delete sermon: ${e.message || e}`)
+    }
+  }
+
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
       <Topbar
@@ -42,6 +55,7 @@ export function SermonsPage({ clients, onNavigate, onSubmit }) {
                     key={s.sermon_id}
                     sermon={s}
                     onClick={() => onNavigate('sermon-detail', s.sermon_id, s._clientId)}
+                    onDelete={handleDelete}
                   />
                 ))
               : <EmptyState message="No sermons yet. Submit one to get started." />
@@ -71,6 +85,17 @@ export function ClientPage({ client, onNavigate, onSubmit }) {
     load()
   }, [client])
 
+  async function handleDelete(sermon) {
+    const prev = sermons
+    setSermons(sermons.filter(s => s.sermon_id !== sermon.sermon_id))
+    try {
+      await deleteSermon(sermon.sermon_id)
+    } catch (e) {
+      setSermons(prev)
+      window.alert(`Failed to delete sermon: ${e.message || e}`)
+    }
+  }
+
   if (!client) return null
 
   return (
@@ -90,6 +115,7 @@ export function ClientPage({ client, onNavigate, onSubmit }) {
                     key={s.sermon_id}
                     sermon={s}
                     onClick={() => onNavigate('sermon-detail', s.sermon_id, client.id)}
+                    onDelete={handleDelete}
                   />
                 ))
               : <EmptyState message="No sermons for this client yet." />

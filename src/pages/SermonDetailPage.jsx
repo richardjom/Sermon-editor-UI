@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
-import { getSermon, reprocessSermon, renderClip } from '../api.js'
+import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips } from '../api.js'
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -177,6 +177,52 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     startRenderPoll()
   }
 
+  // Create a custom clip at a user-supplied range. The backend snaps
+  // to word boundaries and inserts a Clip row; we reload the sermon so
+  // the new clip shows up, and if render was requested, mark it
+  // rendering so the poll picks it up.
+  async function handleCreateCustomClip(form) {
+    const created = await createCustomClip(sermonId, form)
+    const newId = created?.clip_id
+    if (form.render && newId) {
+      setRenderingClipIds(prev => new Set(prev).add(newId))
+      startRenderPoll()
+    }
+    await load()
+    return created
+  }
+
+  // Bulk-render every unrendered clip on the sermon, sequentially on
+  // the backend. We mark all currently-unrendered clip ids as
+  // rendering so the existing poll watches them.
+  async function handleRenderAll({ onlyHigh = false } = {}) {
+    if (!sermon) return
+    const targets = (sermon.clips || []).filter(c => {
+      if (c.rendered_video_url) return false
+      if (onlyHigh && c.strength !== 'high') return false
+      return true
+    })
+    if (!targets.length) return
+    setRenderingClipIds(prev => {
+      const next = new Set(prev)
+      for (const c of targets) next.add(c.clip_id)
+      return next
+    })
+    try {
+      await renderAllClips(sermonId, { onlyHigh })
+    } catch (e) {
+      // Roll back the optimistic in-flight set if the kick-off failed.
+      setRenderingClipIds(prev => {
+        const next = new Set(prev)
+        for (const c of targets) next.delete(c.clip_id)
+        return next
+      })
+      window.alert(`Failed to start bulk render: ${e.message || e}`)
+      return
+    }
+    startRenderPoll()
+  }
+
   // Poll the sermon every 5s while any clip is rendering. When a clip's
   // rendered_video_url changes (or render_error appears), remove it from
   // the rendering set. Stop polling when nothing is in flight.
@@ -241,6 +287,8 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
           onToggleArchived={toggleArchived}
           onReprocess={handleReprocess}
           onRenderClip={handleRenderClip}
+          onCreateCustomClip={handleCreateCustomClip}
+          onRenderAll={handleRenderAll}
         />
       )}
     </div>
@@ -374,7 +422,7 @@ function FailedState({ sermon, onReprocess }) {
  * Body — split layout with the source on the left, clip rail on the right
  * ========================================================================== */
 
-function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip }) {
+function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll }) {
   // Decorate clips with derived fields the UI wants
   const allClips = useMemo(
     () => (sermon.clips || []).map(c => decorateClip(c, clipFlags, sermon.render_options)),
@@ -506,6 +554,8 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
         onArchive={onToggleArchived}
         onReprocess={onReprocess}
         onRenderClip={onRenderClip}
+        onCreateCustomClip={onCreateCustomClip}
+        onRenderAll={onRenderAll}
       />
     </div>
   )
@@ -924,7 +974,11 @@ function RightColumn({
   allClips, visibleClips, sermon, renderingClipIds,
   filter, setFilter, sort, setSort, query, setQuery,
   expandedId, onToggle, onSelect, onPlay, onFav, onArchive, onReprocess, onRenderClip,
+  onCreateCustomClip, onRenderAll,
 }) {
+  const [customOpen, setCustomOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+
   async function handleDownloadAll() {
     for (const clip of visibleClips) {
       if (!clip.rendered_video_url) continue
@@ -940,6 +994,17 @@ function RightColumn({
     }
   }
   const hasAnyRendered = visibleClips.some(c => c.rendered_video_url)
+  const unrenderedCount = allClips.filter(c => !c.rendered_video_url).length
+
+  async function handleBulkRender() {
+    if (bulkBusy || !onRenderAll) return
+    setBulkBusy(true)
+    try {
+      await onRenderAll({ onlyHigh: false })
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   return (
     <div style={{
@@ -949,7 +1014,7 @@ function RightColumn({
     }}>
       {/* header */}
       <div style={{ padding: '20px 22px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <h2 style={{
             margin: 0, fontFamily: FONTS.serif, fontWeight: 500,
             fontSize: 22, color: colors.ink, letterSpacing: -0.2,
@@ -960,6 +1025,40 @@ function RightColumn({
             {visibleClips.length} of {allClips.length}
           </span>
           <div style={{ flex: 1 }} />
+          {onCreateCustomClip && (
+            <button
+              onClick={() => setCustomOpen(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                background: colors.card, color: colors.ink,
+                border: `1px solid ${colors.line2}`,
+                borderRadius: 7, fontSize: 11.5, fontWeight: 500,
+                cursor: 'pointer', fontFamily: FONTS.sans,
+              }}
+              title="Create a clip at custom in/out times"
+            >
+              + Custom clip
+            </button>
+          )}
+          {onRenderAll && unrenderedCount > 0 && (
+            <button
+              onClick={handleBulkRender}
+              disabled={bulkBusy}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                background: colors.card, color: colors.ink,
+                border: `1px solid ${colors.line2}`,
+                borderRadius: 7, fontSize: 11.5, fontWeight: 500,
+                cursor: bulkBusy ? 'wait' : 'pointer',
+                opacity: bulkBusy ? 0.6 : 1,
+                fontFamily: FONTS.sans,
+              }}
+              title="Render every clip that's not yet rendered, one at a time"
+            >
+              <Icon name="play" size={12} color={colors.ink} />
+              {bulkBusy ? 'Queuing…' : `Render ${unrenderedCount} unrendered`}
+            </button>
+          )}
           <button
             onClick={handleDownloadAll}
             disabled={!hasAnyRendered}
@@ -1063,6 +1162,22 @@ function RightColumn({
           </div>
         )}
       </div>
+
+      {customOpen && (
+        <CustomClipModal
+          sermon={sermon}
+          onClose={() => setCustomOpen(false)}
+          onConfirm={async (form) => {
+            try {
+              await onCreateCustomClip?.(form)
+              setCustomOpen(false)
+            } catch (e) {
+              // CustomClipModal surfaces the error inline.
+              throw e
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1380,6 +1495,143 @@ function TrimModal({ clip, onClose, onConfirm }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
             <Action label="Cancel" icon="x" onClick={onClose} />
             <Action label="Trim & re-render" icon="scissors" primary onClick={submit} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CustomClipModal({ sermon, onClose, onConfirm }) {
+  const [startStr, setStartStr] = useState('00:00:00')
+  const [endStr, setEndStr] = useState('00:01:00')
+  const [title, setTitle] = useState('')
+  const [renderNow, setRenderNow] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const durationStr = sermon?.duration_seconds
+    ? `Sermon length ${fmtHMS(sermon.duration_seconds)}`
+    : null
+
+  async function submit() {
+    setError('')
+    const s = parseHMS(startStr)
+    const e = parseHMS(endStr)
+    if (!isFinite(s) || !isFinite(e)) {
+      setError('Use HH:MM:SS for both times.')
+      return
+    }
+    if (s < 0) {
+      setError('Start time cannot be negative.')
+      return
+    }
+    if (e <= s) {
+      setError('End time must be after start time.')
+      return
+    }
+    if (sermon?.duration_seconds && e > sermon.duration_seconds + 1) {
+      setError(`End time exceeds sermon length (${fmtHMS(sermon.duration_seconds)}).`)
+      return
+    }
+    setSubmitting(true)
+    try {
+      await onConfirm({
+        startSeconds: s,
+        endSeconds: e,
+        title: title.trim() || undefined,
+        render: renderNow,
+      })
+    } catch (err) {
+      setError(err?.message || String(err))
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.4)',
+        display: 'grid', placeItems: 'center', zIndex: 100,
+      }}
+    >
+      <div style={{
+        background: colors.card, borderRadius: 12,
+        border: `1px solid ${colors.line2}`,
+        width: 460, maxWidth: '95vw',
+        fontFamily: FONTS.sans,
+      }}>
+        <div style={{
+          padding: '14px 18px', borderBottom: `1px solid ${colors.line}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: colors.ink }}>Create custom clip</div>
+          <button onClick={onClose} disabled={submitting} style={{
+            background: 'none', border: 'none', cursor: submitting ? 'wait' : 'pointer',
+            color: colors.dim, fontSize: 18, padding: 0, lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        <div style={{ padding: 18 }}>
+          <div style={{ fontSize: 12, color: colors.body, marginBottom: 12, lineHeight: 1.5 }}>
+            Pick the start and end times in the sermon (HH:MM:SS). The clip
+            snaps to the nearest word boundaries and pulls the transcript
+            from those words.
+            {durationStr && (
+              <span style={{ color: colors.dim }}> · {durationStr}</span>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <TrimField label="Start" value={startStr} onChange={setStartStr} />
+            <TrimField label="End" value={endStr} onChange={setEndStr} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{
+              fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
+              letterSpacing: 1.2, marginBottom: 4,
+            }}>
+              Title (optional)
+            </div>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Auto-derived from first words if blank"
+              style={{
+                width: '100%', padding: '8px 10px', boxSizing: 'border-box',
+                background: '#fff', border: `1px solid ${colors.line2}`,
+                borderRadius: 6, fontSize: 13, fontFamily: FONTS.sans,
+                color: colors.ink, outline: 'none',
+              }}
+            />
+          </div>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            fontSize: 12.5, color: colors.body, marginBottom: 12,
+          }}>
+            <input
+              type="checkbox"
+              checked={renderNow}
+              onChange={(e) => setRenderNow(e.target.checked)}
+              style={{ accentColor: colors.high, cursor: 'pointer' }}
+            />
+            Render immediately after creating
+          </label>
+          {error && (
+            <div style={{
+              fontSize: 12, color: '#8b2929', background: '#fbecec',
+              padding: '8px 10px', borderRadius: 6, marginBottom: 12,
+            }}>{error}</div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            <Action label="Cancel" icon="x" onClick={onClose} disabled={submitting} />
+            <Action
+              label={submitting ? 'Creating…' : 'Create clip'}
+              icon="plus"
+              primary
+              onClick={submit}
+              disabled={submitting}
+            />
           </div>
         </div>
       </div>

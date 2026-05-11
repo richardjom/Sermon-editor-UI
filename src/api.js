@@ -70,3 +70,59 @@ export async function renderClip(clipId, { startSeconds, endSeconds } = {}) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
+
+// Create a custom clip on an existing sermon at a user-supplied
+// time range. The backend snaps start/end to the nearest word
+// boundaries when the sermon has word_transcript_json. Set
+// render=true to queue an immediate render of the new clip.
+export async function createCustomClip(sermonId, {
+  startSeconds, endSeconds, title, suggestedHook, suggestedCaption,
+  transcript, whyItWorks, strength, render,
+} = {}) {
+  const body = {
+    start_seconds: startSeconds,
+    end_seconds: endSeconds,
+  }
+  if (title) body.title = title
+  if (suggestedHook) body.suggested_hook = suggestedHook
+  if (suggestedCaption) body.suggested_caption = suggestedCaption
+  if (transcript) body.transcript = transcript
+  if (whyItWorks) body.why_it_works = whyItWorks
+  if (strength) body.strength = strength
+  if (typeof render === 'boolean') body.render = render
+  const res = await fetch(`${BASE}/sermons/${sermonId}/clips`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status}: ${text || 'create-clip failed'}`)
+  }
+  return res.json()
+}
+
+// Bulk-render every unrendered clip on a sermon, sequentially.
+// Backend queues a single background task so concurrent ffmpeg
+// renders don't OOM Railway.
+export async function renderAllClips(sermonId, { onlyHigh = false } = {}) {
+  const res = await fetch(`${BASE}/sermons/${sermonId}/render-all`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ only_high: onlyHigh }),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+// Hard-delete a sermon, its clips, and its R2 storage. Notion clip
+// pages are intentionally NOT touched; archive those manually if
+// needed.
+export async function deleteSermon(sermonId) {
+  const res = await fetch(`${BASE}/sermon/${sermonId}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status}: ${text || 'delete failed'}`)
+  }
+  return res.json()
+}
