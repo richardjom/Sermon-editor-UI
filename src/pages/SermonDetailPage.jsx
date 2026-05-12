@@ -1812,6 +1812,17 @@ function TrimField({ label, value, onChange }) {
   )
 }
 
+// Mirror of backend app/services/captions.py CAPTION_TEMPLATES. Keep
+// in sync when adding/removing templates. Frontend doesn't need the
+// full style block, just the picker-display metadata.
+const CAPTION_TEMPLATES_UI = [
+  { value: 'bold_yellow',     label: 'Bold Yellow',     description: 'TikTok classic — yellow karaoke highlight on white.' },
+  { value: 'clean_white',     label: 'Clean White',     description: 'Minimal — white active on dim gray, lighter outline.' },
+  { value: 'brand',           label: 'Brand',           description: 'Your brand color as the highlight (set hex below).' },
+  { value: 'bold_punch',      label: 'Bold Punch',      description: 'Big, heavy, high-contrast — Mr. Beast / stadium.' },
+  { value: 'serif_editorial', label: 'Serif Editorial', description: 'Calmer — serif font, smaller, soft gray inactive.' },
+]
+
 function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
   // Pre-fill from the sermon's current saved options so the user sees
   // what would happen if they hit Render right now. Each render flow
@@ -1826,6 +1837,8 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
     initial.crop_lower_third === false ? 'off' :
     'auto'
   )
+  const [captionTemplate, setCaptionTemplate] = useState(initial.caption_template || 'bold_yellow')
+  const [brandColor, setBrandColor] = useState(initial.brand_color || '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -1843,13 +1856,29 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
 
   async function submit() {
     setError('')
+    // brand_color validation only matters if the brand template is selected.
+    if (captionTemplate === 'brand' && brandColor) {
+      const ok = /^#?[0-9a-fA-F]{6}$/.test(brandColor.trim())
+      if (!ok) {
+        setError('Brand color must be 6-digit hex (e.g. #FF5733).')
+        return
+      }
+    }
     setSubmitting(true)
     try {
-      await onConfirm({
+      const payload = {
         vertical,
         face_tracking: faceTracking,
         crop_lower_third: crop === 'auto' ? null : crop === 'on',
-      })
+        caption_template: captionTemplate || 'bold_yellow',
+      }
+      // Only send brand_color when relevant — keeps PATCH clean.
+      if (captionTemplate === 'brand') {
+        payload.brand_color = brandColor
+          ? (brandColor.startsWith('#') ? brandColor : `#${brandColor}`)
+          : null
+      }
+      await onConfirm(payload)
       // Parent closes the modal on success.
     } catch (e) {
       setError(e?.message || String(e))
@@ -1943,12 +1972,71 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
             marginTop: 16, paddingTop: 14,
             borderTop: `1px solid ${colors.line}`,
           }}>
-            <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans }}>
-              Captions: <span style={{ color: colors.body, fontWeight: 400 }}>Karaoke (auto-burned)</span>
+            <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans, marginBottom: 4 }}>
+              Caption template
             </div>
-            <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 2, lineHeight: 1.45 }}>
-              Custom fonts, colors, and caption templates are coming soon.
+            <div style={{ fontSize: 11.5, color: colors.dim, marginBottom: 8, lineHeight: 1.45 }}>
+              All clips burn in karaoke-style captions. Pick the look.
             </div>
+            <select
+              value={captionTemplate}
+              onChange={(e) => setCaptionTemplate(e.target.value)}
+              disabled={submitting}
+              style={{
+                width: '100%', padding: '8px 10px', boxSizing: 'border-box',
+                background: '#fff', border: `1px solid ${colors.line2}`,
+                borderRadius: 6, fontSize: 13, fontFamily: FONTS.sans,
+                color: colors.ink, outline: 'none',
+                cursor: submitting ? 'wait' : 'pointer',
+              }}
+            >
+              {CAPTION_TEMPLATES_UI.map(tpl => (
+                <option key={tpl.value} value={tpl.value}>{tpl.label}</option>
+              ))}
+            </select>
+            {(() => {
+              const sel = CAPTION_TEMPLATES_UI.find(t => t.value === captionTemplate)
+              return sel ? (
+                <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 6, lineHeight: 1.45 }}>
+                  {sel.description}
+                </div>
+              ) : null
+            })()}
+            {captionTemplate === 'brand' && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{
+                  fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
+                  letterSpacing: 1.2, marginBottom: 4,
+                }}>
+                  Brand color (hex)
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={brandColor}
+                    onChange={(e) => setBrandColor(e.target.value)}
+                    placeholder="#FF5733"
+                    disabled={submitting}
+                    style={{
+                      flex: 1, padding: '8px 10px', boxSizing: 'border-box',
+                      background: '#fff', border: `1px solid ${colors.line2}`,
+                      borderRadius: 6, fontSize: 13, fontFamily: FONTS.mono,
+                      color: colors.ink, outline: 'none',
+                    }}
+                  />
+                  {/^#?[0-9a-fA-F]{6}$/.test((brandColor || '').trim()) && (
+                    <div
+                      title="Preview of the highlight color"
+                      style={{
+                        width: 28, height: 28, borderRadius: 6,
+                        border: `1px solid ${colors.line2}`,
+                        background: brandColor.startsWith('#') ? brandColor : `#${brandColor}`,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
