@@ -1,11 +1,13 @@
 const BASE = 'https://sermon-editor-production.up.railway.app'
 
 // Audio-only pipeline (legacy). Kept for backward compatibility.
-export async function submitSermon({ client_id, sermon_title, sermon_date, file_url }) {
+export async function submitSermon({ client_id, sermon_title, sermon_date, file_url, service_datetime }) {
+  const body = { client_id, sermon_title, sermon_date, file_url }
+  if (service_datetime) body.service_datetime = service_datetime
   const res = await fetch(`${BASE}/process-sermon`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id, sermon_title, sermon_date, file_url }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
@@ -22,10 +24,11 @@ export async function submitSermon({ client_id, sermon_title, sermon_date, file_
 //     // brand_color, logo_url come in PR 2/3
 //   }
 export async function submitSermonVideo({
-  client_id, sermon_title, sermon_date, file_url, render_options,
+  client_id, sermon_title, sermon_date, file_url, render_options, service_datetime,
 }) {
   const body = { client_id, sermon_title, sermon_date, file_url }
   if (render_options) body.render_options = render_options
+  if (service_datetime) body.service_datetime = service_datetime
   const res = await fetch(`${BASE}/process-sermon-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -137,6 +140,73 @@ export async function updateRenderOptions(sermonId, patch) {
   }
   return res.json()
 }
+
+// Dashboard backbone (VE1 deadline-queue spec)
+// -------------------------------------------------------------------
+// These power the upcoming Deadline Queue dashboard. listJobs is the
+// primary feed; listClients / clientsSummary / workload power the
+// secondary cards; updateDeadline + markDelivered / unmarkDelivered
+// let the editor adjust scheduling without leaving the row.
+
+export async function listJobs({ active = true, limit = 100 } = {}) {
+  const qs = new URLSearchParams({ active: String(active), limit: String(limit) })
+  const res = await fetch(`${BASE}/jobs?${qs}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function listClients() {
+  const res = await fetch(`${BASE}/clients`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function updateClient(clientId, patch) {
+  const res = await fetch(`${BASE}/clients/${clientId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch || {}),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function clientsSummary() {
+  const res = await fetch(`${BASE}/clients/summary`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function workload({ days = 7 } = {}) {
+  const res = await fetch(`${BASE}/workload?days=${days}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function updateDeadline(sermonId, serviceDatetime) {
+  // Pass null to clear, ISO string to reschedule.
+  const body = { service_datetime: serviceDatetime }
+  const res = await fetch(`${BASE}/sermon/${sermonId}/deadline`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function markDelivered(sermonId) {
+  const res = await fetch(`${BASE}/sermon/${sermonId}/mark-delivered`, { method: 'POST' })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function unmarkDelivered(sermonId) {
+  const res = await fetch(`${BASE}/sermon/${sermonId}/unmark-delivered`, { method: 'POST' })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
 
 // Hard-delete a sermon, its clips, and its R2 storage. Notion clip
 // pages are intentionally NOT touched; archive those manually if

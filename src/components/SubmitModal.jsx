@@ -10,12 +10,22 @@ import { submitSermon, submitSermonVideo } from '../api.js'
 // SermonDetailPage "Render settings" tab and PATCH via
 // /sermon/{id}/render-options.
 
+function defaultDeadlineISODate() {
+  // Today + 2 days, as a YYYY-MM-DD string. Matches the backend's
+  // 2-day default from app/main.py _resolve_service_datetime. The
+  // user can override by changing the picker before submit.
+  const d = new Date()
+  d.setDate(d.getDate() + 2)
+  return d.toISOString().split('T')[0]
+}
+
 export function SubmitModal({ open, onClose, clients, onSubmitted }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [clientId, setClientId] = useState(clients[0]?.id || '')
   const [url, setUrl] = useState('')
   const [fileName, setFileName] = useState('')
+  const [deadline, setDeadline] = useState(defaultDeadlineISODate())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -45,6 +55,9 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
     if (!clientId) return setError('Please select a client.')
     setError('')
     setLoading(true)
+    // Deadline is a YYYY-MM-DD; backend wants an ISO timestamp. Use
+    // 9am local on that date (a workable "morning deliverable").
+    const deadlineISO = deadline ? `${deadline}T09:00:00` : null
     try {
       let result
       if (pipeline === 'video') {
@@ -53,17 +66,18 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
         // the user can edit them on the detail page after Claude finishes.
         result = await submitSermonVideo({
           client_id: clientId, sermon_title: title, sermon_date: date,
-          file_url: url,
+          file_url: url, service_datetime: deadlineISO,
         })
       } else {
         result = await submitSermon({
           client_id: clientId, sermon_title: title, sermon_date: date,
-          file_url: url,
+          file_url: url, service_datetime: deadlineISO,
         })
       }
       onSubmitted(result.sermon_id)
       onClose()
       setTitle(''); setUrl(''); setFileName('')
+      setDeadline(defaultDeadlineISODate())
     } catch (e) {
       setError('Could not submit. Check that the API is reachable.')
     }
@@ -90,12 +104,20 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
         </>
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
         <FormGroup label="Sermon title">
           <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Faith Over Fear" />
         </FormGroup>
-        <FormGroup label="Date">
+        <FormGroup label="Preached on">
           <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </FormGroup>
+        <FormGroup label="Deadline">
+          <Input
+            type="date"
+            value={deadline}
+            onChange={e => setDeadline(e.target.value)}
+            title="When the church wants the clips by. Defaults to 2 days from now; editable any time on the sermon detail page."
+          />
         </FormGroup>
       </div>
       <FormGroup label="Client">
