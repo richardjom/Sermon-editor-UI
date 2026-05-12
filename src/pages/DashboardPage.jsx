@@ -25,7 +25,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Topbar, Btn, Spinner } from '../components/ui.jsx'
-import { listJobs, clientsSummary, workload as workloadAPI, updateDeadline } from '../api.js'
+import { listJobs, clientsSummary, workload as workloadAPI, updateDeadline, deleteSermon } from '../api.js'
 
 /* ============================================================================
  * Design tokens (spec section 8)
@@ -224,7 +224,58 @@ function useDashboardData() {
 
 export function DashboardPage({ clients: _clientsProp, onNavigate, onSubmit }) {
   const { jobs, now, clients, days, loading, error, refreshing, refresh: refreshDashboard } = useDashboardData()
+  // Urgency buckets stay computed against the FULL queue — the counts
+  // are meant to be cross-client at-a-glance, not filtered by the
+  // selected client. The work queue itself is what filters.
   const buckets = useMemo(() => bucketJobs(jobs, now), [jobs, now])
+
+  // Per-client filter for the work queue. Default "all" shows
+  // everything. The dropdown options are derived from jobs (so we
+  // only offer clients that have active jobs to filter to), with
+  // the client label coming from the job's embedded client metadata.
+  const [clientFilter, setClientFilter] = useState('all')
+  const clientFilterOptions = useMemo(() => {
+    const seen = new Map()
+    for (const j of jobs) {
+      const c = j.client
+      if (!c?.id) continue
+      if (!seen.has(c.id)) seen.set(c.id, c.name || c.id)
+    }
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
+  }, [jobs])
+  // If the currently-selected client falls off the list (e.g. their
+  // last sermon got delivered), snap back to "all" so the queue
+  // doesn't render permanently empty.
+  useEffect(() => {
+    if (clientFilter !== 'all'
+        && !clientFilterOptions.some(o => o.id === clientFilter)) {
+      setClientFilter('all')
+    }
+  }, [clientFilter, clientFilterOptions])
+  const filteredJobs = useMemo(() => {
+    if (clientFilter === 'all') return jobs
+    return jobs.filter(j => j.client?.id === clientFilter)
+  }, [jobs, clientFilter])
+
+  // Delete a sermon from the dashboard. Hard delete via the existing
+  // DELETE /sermon/{id} endpoint — wipes the row, its clips, and the
+  // R2 storage prefix. Notion pages stay (archive there manually if
+  // needed). Optimistic refresh: we re-fetch the dashboard rather
+  // than splicing locally, so urgency buckets, workload chart, and
+  // by-client summary all update.
+  async function handleDelete(job) {
+    const label = job.title || job.id
+    const ok = window.confirm(
+      `Delete "${label}"?\n\nThis permanently removes the sermon, all its clips, and the source video / audio / rendered clips from storage. Notion pages stay. This cannot be undone.`
+    )
+    if (!ok) return
+    try {
+      await deleteSermon(job.id)
+      refreshDashboard()
+    } catch (e) {
+      window.alert(`Failed to delete: ${e.message || e}`)
+    }
+  }
 
   return (
     <div style={{
@@ -252,12 +303,17 @@ export function DashboardPage({ clients: _clientsProp, onNavigate, onSubmit }) {
         <UrgencyStrip buckets={buckets} now={now} />
 
         <WorkQueue
-          jobs={jobs}
+          jobs={filteredJobs}
+          totalJobCount={jobs.length}
+          clientFilter={clientFilter}
+          onClientFilterChange={setClientFilter}
+          clientFilterOptions={clientFilterOptions}
           now={now}
           loading={loading}
           refreshing={refreshing}
           onOpenSermon={(sermonId, clientId) => onNavigate('sermon-detail', sermonId, clientId)}
           onDeadlineChanged={refreshDashboard}
+          onDelete={handleDelete}
         />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
@@ -385,14 +441,18 @@ function subtextFromJobs(jobs, now, bucket) {
  * ② WorkQueue + WorkQueueRow
  * ========================================================================== */
 
-function WorkQueue({ jobs, now, loading, refreshing, onOpenSermon, onDeadlineChanged }) {
+function WorkQueue({
+  jobs, totalJobCount, clientFilter, onClientFilterChange, clientFilterOptions,
+  now, loading, refreshing, onOpenSermon, onDeadlineChanged, onDelete,
+}) {
+  const filterActive = clientFilter !== 'all'
   return (
     <div style={{
       background: COLORS.card, border: `1px solid ${COLORS.line}`, borderRadius: 12,
     }}>
       <div style={{
         padding: '14px 18px', borderBottom: `1px solid ${COLORS.lineSoft}`,
-        display: 'flex', alignItems: 'center', gap: 12,
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
       }}>
         <h3 style={{
           margin: 0, fontSize: 15, fontWeight: 600, color: COLORS.ink,
@@ -401,16 +461,36 @@ function WorkQueue({ jobs, now, loading, refreshing, onOpenSermon, onDeadlineCha
           Work queue
         </h3>
         <span style={{ fontSize: 11.5, color: COLORS.ink3 }}>
-          {jobs.length} active · sorted by deadline
+          {filterActive
+            ? `${jobs.length} of ${totalJobCount} active · filtered`
+            : `${jobs.length} active · sorted by deadline`}
         </span>
         <div style={{ flex: 1 }} />
         {refreshing && <Spinner size={14} />}
+        <select
+          value={clientFilter}
+          onChange={e => onClientFilterChange(e.target.value)}
+          aria-label="Filter by client"
+          style={{
+            background: filterActive ? COLORS.bgSoft : COLORS.card,
+            color: COLORS.ink2,
+            border: `1px solid ${COLORS.line}`,
+            borderRadius: 7, padding: '6px 10px',
+            fontSize: 12, fontFamily: FONTS.sans, cursor: 'pointer',
+            outline: 'none',
+          }}
+        >
+          <option value="all">All clients</option>
+          {clientFilterOptions.map(opt => (
+            <option key={opt.id} value={opt.id}>{opt.name}</option>
+          ))}
+        </select>
       </div>
 
       {loading && jobs.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center' }}><Spinner size={20} /></div>
       ) : jobs.length === 0 ? (
-        <EmptyQueue jobs={jobs} now={now} />
+        <EmptyQueue filtered={filterActive} />
       ) : (
         jobs.map((job, i) => (
           <WorkQueueRow
@@ -420,6 +500,7 @@ function WorkQueue({ jobs, now, loading, refreshing, onOpenSermon, onDeadlineCha
             isLast={i === jobs.length - 1}
             onOpen={() => onOpenSermon(job.id, job.client?.id)}
             onDeadlineChanged={onDeadlineChanged}
+            onDelete={() => onDelete?.(job)}
           />
         ))
       )}
@@ -427,21 +508,23 @@ function WorkQueue({ jobs, now, loading, refreshing, onOpenSermon, onDeadlineCha
   )
 }
 
-function EmptyQueue() {
+function EmptyQueue({ filtered }) {
   return (
     <div style={{
       padding: '40px 24px', textAlign: 'center', color: COLORS.ink3,
       fontSize: 13.5,
     }}>
       <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.ink, marginBottom: 6 }}>
-        All caught up.
+        {filtered ? 'No jobs for this client.' : 'All caught up.'}
       </div>
-      <div>No active jobs in the queue.</div>
+      <div>
+        {filtered ? 'Switch the filter to see other clients.' : 'No active jobs in the queue.'}
+      </div>
     </div>
   )
 }
 
-function WorkQueueRow({ job, now, isLast, onOpen, onDeadlineChanged }) {
+function WorkQueueRow({ job, now, isLast, onOpen, onDeadlineChanged, onDelete }) {
   const [hover, setHover] = useState(false)
   const [editingDeadline, setEditingDeadline] = useState(false)
   const chip = deadlineChip(job.service_datetime, now)
@@ -560,8 +643,30 @@ function WorkQueueRow({ job, now, isLast, onOpen, onDeadlineChanged }) {
         </div>
       </div>
 
-      {/* 6. Action */}
-      <div onClick={e => e.stopPropagation()}>
+      {/* 6. Action — primary Open on review, ghost Details otherwise.
+          Hover-revealed Delete sits next to it for quick cleanup. */}
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {onDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            title="Delete sermon permanently"
+            aria-label="Delete sermon"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              padding: 7, borderRadius: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: COLORS.ink4,
+              opacity: hover ? 1 : 0,
+              transition: 'opacity 0.12s, background 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.color = '#ef4444' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = COLORS.ink4 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M3 4h10M6 4V2.5A.5.5 0 016.5 2h3a.5.5 0 01.5.5V4M5 4l.7 9a1 1 0 001 .9h2.6a1 1 0 001-.9L11 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         {isReview ? (
           <button
             onClick={onOpen}

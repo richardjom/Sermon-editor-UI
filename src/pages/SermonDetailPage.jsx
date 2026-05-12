@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
-import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered } from '../api.js'
+import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon } from '../api.js'
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -177,6 +177,22 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
       setSermon(prev => prev ? { ...prev, delivered_at: null } : prev)
     } catch (e) {
       window.alert(`Could not restore to active: ${e.message || e}`)
+    }
+  }
+
+  async function handleDelete() {
+    if (!sermon) return
+    const label = sermon.title || sermonId
+    const ok = window.confirm(
+      `Delete "${label}"?\n\nThis permanently removes the sermon, all its clips, and the source video / audio / rendered clips from storage. Notion pages stay. This cannot be undone.`
+    )
+    if (!ok) return
+    try {
+      await deleteSermon(sermonId)
+      // Bounce back to wherever they came from — the sermon no longer exists.
+      onBack?.()
+    } catch (e) {
+      window.alert(`Failed to delete: ${e.message || e}`)
     }
   }
 
@@ -358,6 +374,7 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
         onUpdateDeadline={handleUpdateDeadline}
         onMarkDelivered={handleMarkDelivered}
         onUnmarkDelivered={handleUnmarkDelivered}
+        onDelete={handleDelete}
       />
 
       {loading && (
@@ -404,7 +421,7 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
  * Top bar
  * ========================================================================== */
 
-function TopBar({ sermon, sermonId, onBack, onReprocess, onUpdateDeadline, onMarkDelivered, onUnmarkDelivered }) {
+function TopBar({ sermon, sermonId, onBack, onReprocess, onUpdateDeadline, onMarkDelivered, onUnmarkDelivered, onDelete }) {
   const [deadlineOpen, setDeadlineOpen] = useState(false)
   const meta = sermon
     ? [sermon._clientName || sermon.client_id, formatDate(sermon.sermon_date), formatDuration(sermon.duration_seconds)]
@@ -507,6 +524,34 @@ function TopBar({ sermon, sermonId, onBack, onReprocess, onUpdateDeadline, onMar
           fontSize: 12.5, cursor: 'pointer', fontFamily: FONTS.sans,
         }}>
           Reprocess
+        </button>
+      )}
+      {sermon && onDelete && (
+        <button
+          onClick={onDelete}
+          title="Delete sermon permanently — removes DB row, clips, and R2 storage."
+          aria-label="Delete sermon"
+          style={{
+            background: 'transparent', border: `1px solid ${colors.line2}`,
+            color: colors.dim, padding: '8px 10px', borderRadius: 8,
+            cursor: 'pointer', fontFamily: FONTS.sans,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'color 0.12s, background 0.12s, border-color 0.12s',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'
+            e.currentTarget.style.color = '#b8423b'
+            e.currentTarget.style.borderColor = 'rgba(184, 66, 59, 0.4)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = colors.dim
+            e.currentTarget.style.borderColor = colors.line2
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M3 4h10M6 4V2.5A.5.5 0 016.5 2h3a.5.5 0 01.5.5V4M5 4l.7 9a1 1 0 001 .9h2.6a1 1 0 001-.9L11 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       )}
     </div>
