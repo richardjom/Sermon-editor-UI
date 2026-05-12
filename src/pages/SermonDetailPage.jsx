@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
-import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions } from '../api.js'
+import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered } from '../api.js'
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -143,6 +143,41 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     setProgress(30)
     setSermon(null)
     load()
+  }
+
+  // Deadline + delivered controls in the TopBar. Each one PATCHes
+  // the backend and optimistically updates the local sermon copy so
+  // the UI doesn't flicker waiting on the next /sermon/{id} fetch.
+  async function handleUpdateDeadline(iso) {
+    try {
+      const res = await updateDeadline(sermonId, iso)
+      setSermon(prev => prev
+        ? { ...prev, service_datetime: res.service_datetime ?? null }
+        : prev)
+    } catch (e) {
+      window.alert(`Could not update deadline: ${e.message || e}`)
+      throw e
+    }
+  }
+
+  async function handleMarkDelivered() {
+    try {
+      const res = await markDelivered(sermonId)
+      setSermon(prev => prev
+        ? { ...prev, delivered_at: res.delivered_at }
+        : prev)
+    } catch (e) {
+      window.alert(`Could not mark delivered: ${e.message || e}`)
+    }
+  }
+
+  async function handleUnmarkDelivered() {
+    try {
+      await unmarkDelivered(sermonId)
+      setSermon(prev => prev ? { ...prev, delivered_at: null } : prev)
+    } catch (e) {
+      window.alert(`Could not restore to active: ${e.message || e}`)
+    }
   }
 
   function toggleFav(clipId) {
@@ -315,7 +350,15 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
       fontFamily: FONTS.sans, fontSize: 13,
       display: 'flex', flexDirection: 'column', minHeight: 0,
     }}>
-      <TopBar sermon={sermon} sermonId={sermonId} onBack={onBack} onReprocess={handleReprocess} />
+      <TopBar
+        sermon={sermon}
+        sermonId={sermonId}
+        onBack={onBack}
+        onReprocess={handleReprocess}
+        onUpdateDeadline={handleUpdateDeadline}
+        onMarkDelivered={handleMarkDelivered}
+        onUnmarkDelivered={handleUnmarkDelivered}
+      />
 
       {loading && (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: '3rem' }}>
@@ -361,11 +404,13 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
  * Top bar
  * ========================================================================== */
 
-function TopBar({ sermon, sermonId, onBack, onReprocess }) {
+function TopBar({ sermon, sermonId, onBack, onReprocess, onUpdateDeadline, onMarkDelivered, onUnmarkDelivered }) {
+  const [deadlineOpen, setDeadlineOpen] = useState(false)
   const meta = sermon
     ? [sermon._clientName || sermon.client_id, formatDate(sermon.sermon_date), formatDuration(sermon.duration_seconds)]
         .filter(Boolean).join(' · ')
     : ''
+  const isDelivered = !!sermon?.delivered_at
   return (
     <div style={{
       display: 'flex', alignItems: 'center', padding: '20px 28px', gap: 18,
@@ -395,7 +440,66 @@ function TopBar({ sermon, sermonId, onBack, onReprocess }) {
         )}
       </div>
       <div style={{ flex: 1 }} />
-      {sermon && <StatusPill status={sermon.status} />}
+      {sermon && onUpdateDeadline && (
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => setDeadlineOpen(v => !v)}
+            title="Click to change the deadline"
+            style={{
+              background: colors.card, border: `1px solid ${colors.line2}`,
+              color: colors.body, padding: '6px 12px', borderRadius: 8,
+              fontSize: 12, cursor: 'pointer', fontFamily: FONTS.sans,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <span style={{ color: colors.dim, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 500 }}>
+              Deadline
+            </span>
+            <span style={{ color: colors.ink, fontWeight: 500 }}>
+              {sermon.service_datetime
+                ? formatDateLong(sermon.service_datetime)
+                : 'Not set'}
+            </span>
+          </button>
+          {deadlineOpen && (
+            <BriefDeadlinePopover
+              currentISO={sermon.service_datetime}
+              onClose={() => setDeadlineOpen(false)}
+              onSave={async (iso) => {
+                await onUpdateDeadline(iso)
+                setDeadlineOpen(false)
+              }}
+            />
+          )}
+        </div>
+      )}
+      {sermon && <StatusPill status={sermon.status} delivered={isDelivered} />}
+      {sermon?.status === 'completed' && !isDelivered && onMarkDelivered && (
+        <button
+          onClick={onMarkDelivered}
+          title="Stamp this sermon as delivered to the client — drops it from the active dashboard queue."
+          style={{
+            background: colors.high, border: 'none',
+            color: colors.paper, padding: '8px 14px', borderRadius: 8,
+            fontSize: 12.5, fontWeight: 500, cursor: 'pointer', fontFamily: FONTS.sans,
+          }}
+        >
+          Mark delivered
+        </button>
+      )}
+      {isDelivered && onUnmarkDelivered && (
+        <button
+          onClick={onUnmarkDelivered}
+          title="Bring this sermon back into the active dashboard queue."
+          style={{
+            background: 'transparent', border: `1px solid ${colors.line2}`,
+            color: colors.body, padding: '8px 14px', borderRadius: 8,
+            fontSize: 12.5, cursor: 'pointer', fontFamily: FONTS.sans,
+          }}
+        >
+          Restore to active
+        </button>
+      )}
       {sermon?.status === 'completed' && (
         <button onClick={onReprocess} style={{
           background: 'transparent', border: `1px solid ${colors.line2}`,
@@ -409,7 +513,128 @@ function TopBar({ sermon, sermonId, onBack, onReprocess }) {
   )
 }
 
-function StatusPill({ status }) {
+function BriefDeadlinePopover({ currentISO, onClose, onSave }) {
+  const initialDate = useMemo(() => {
+    if (currentISO) {
+      try { return new Date(currentISO).toISOString().slice(0, 10) } catch {}
+    }
+    return new Date().toISOString().slice(0, 10)
+  }, [currentISO])
+  const [date, setDate] = useState(initialDate)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const popRef = useRef(null)
+
+  useEffect(() => {
+    function down(e) {
+      if (popRef.current && !popRef.current.contains(e.target)) onClose()
+    }
+    function key(e) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('mousedown', down)
+      document.removeEventListener('keydown', key)
+    }
+  }, [onClose])
+
+  async function commit(value) {
+    setError('')
+    setSubmitting(true)
+    try {
+      await onSave(value)
+    } catch (e) {
+      setError(e?.message || 'Failed to save')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      ref={popRef}
+      style={{
+        position: 'absolute', top: '100%', right: 0, marginTop: 6,
+        zIndex: 50, background: colors.card,
+        border: `1px solid ${colors.line2}`, borderRadius: 10,
+        boxShadow: '0 4px 16px rgba(20,16,10,0.08)',
+        padding: 12, width: 240, fontFamily: FONTS.sans,
+      }}
+    >
+      <div style={{
+        fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
+        letterSpacing: 1.2, marginBottom: 6,
+      }}>
+        Change deadline
+      </div>
+      <input
+        type="date"
+        value={date}
+        onChange={e => setDate(e.target.value)}
+        disabled={submitting}
+        autoFocus
+        style={{
+          width: '100%', padding: '7px 9px', boxSizing: 'border-box',
+          background: '#fff', border: `1px solid ${colors.line2}`,
+          borderRadius: 6, fontSize: 13, fontFamily: FONTS.sans,
+          color: colors.ink, outline: 'none',
+        }}
+      />
+      {error && (
+        <div style={{
+          fontSize: 11.5, color: '#8b2929', background: '#fbecec',
+          padding: '6px 8px', borderRadius: 6, marginTop: 8,
+        }}>
+          {error}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, alignItems: 'center' }}>
+        {currentISO && (
+          <button
+            type="button"
+            onClick={() => commit(null)}
+            disabled={submitting}
+            title="Remove the deadline"
+            style={{
+              background: 'transparent', color: colors.dim,
+              border: 'none', padding: '6px 4px', fontSize: 11.5,
+              cursor: submitting ? 'wait' : 'pointer', fontFamily: FONTS.sans,
+            }}
+          >
+            Clear
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          style={{
+            background: 'transparent', color: colors.body,
+            border: `1px solid ${colors.line2}`, padding: '6px 12px',
+            borderRadius: 6, fontSize: 12, cursor: submitting ? 'wait' : 'pointer',
+            fontFamily: FONTS.sans,
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => commit(date ? `${date}T09:00:00` : null)}
+          disabled={submitting}
+          style={{
+            background: colors.ink, color: colors.paper, border: 'none',
+            padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+            cursor: submitting ? 'wait' : 'pointer', fontFamily: FONTS.sans,
+          }}
+        >
+          {submitting ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function StatusPill({ status, delivered }) {
   const map = {
     completed: { c: colors.high, label: 'Completed' },
     processing: { c: '#a07a26', label: 'Processing' },
@@ -418,7 +643,11 @@ function StatusPill({ status }) {
     analyzing: { c: '#a07a26', label: 'Analyzing' },
     transcribing: { c: '#a07a26', label: 'Transcribing' },
   }
-  const s = map[status] || { c: colors.dim, label: status || '—' }
+  // Delivered overrides everything else — the editor cares more about
+  // "is this off my queue" than about whether each clip rendered.
+  const s = delivered
+    ? { c: colors.high, label: 'Delivered' }
+    : (map[status] || { c: colors.dim, label: status || '—' })
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 6, padding: '5px 11px',

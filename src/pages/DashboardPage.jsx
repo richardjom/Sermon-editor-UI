@@ -25,7 +25,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Topbar, Btn, Spinner } from '../components/ui.jsx'
-import { listJobs, clientsSummary, workload as workloadAPI } from '../api.js'
+import { listJobs, clientsSummary, workload as workloadAPI, updateDeadline } from '../api.js'
 
 /* ============================================================================
  * Design tokens (spec section 8)
@@ -223,7 +223,7 @@ function useDashboardData() {
  * ========================================================================== */
 
 export function DashboardPage({ clients: _clientsProp, onNavigate, onSubmit }) {
-  const { jobs, now, clients, days, loading, error, refreshing } = useDashboardData()
+  const { jobs, now, clients, days, loading, error, refreshing, refresh: refreshDashboard } = useDashboardData()
   const buckets = useMemo(() => bucketJobs(jobs, now), [jobs, now])
 
   return (
@@ -257,6 +257,7 @@ export function DashboardPage({ clients: _clientsProp, onNavigate, onSubmit }) {
           loading={loading}
           refreshing={refreshing}
           onOpenSermon={(sermonId, clientId) => onNavigate('sermon-detail', sermonId, clientId)}
+          onDeadlineChanged={refreshDashboard}
         />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
@@ -384,7 +385,7 @@ function subtextFromJobs(jobs, now, bucket) {
  * ② WorkQueue + WorkQueueRow
  * ========================================================================== */
 
-function WorkQueue({ jobs, now, loading, refreshing, onOpenSermon }) {
+function WorkQueue({ jobs, now, loading, refreshing, onOpenSermon, onDeadlineChanged }) {
   return (
     <div style={{
       background: COLORS.card, border: `1px solid ${COLORS.line}`, borderRadius: 12,
@@ -418,6 +419,7 @@ function WorkQueue({ jobs, now, loading, refreshing, onOpenSermon }) {
             now={now}
             isLast={i === jobs.length - 1}
             onOpen={() => onOpenSermon(job.id, job.client?.id)}
+            onDeadlineChanged={onDeadlineChanged}
           />
         ))
       )}
@@ -439,8 +441,9 @@ function EmptyQueue() {
   )
 }
 
-function WorkQueueRow({ job, now, isLast, onOpen }) {
+function WorkQueueRow({ job, now, isLast, onOpen, onDeadlineChanged }) {
   const [hover, setHover] = useState(false)
+  const [editingDeadline, setEditingDeadline] = useState(false)
   const chip = deadlineChip(job.service_datetime, now)
   const chipBg = chipColors(chip.tone)
   const stage = job.stage || 'queued'
@@ -473,17 +476,38 @@ function WorkQueueRow({ job, now, isLast, onOpen }) {
         transition: 'background 0.1s',
       }}
     >
-      {/* 1. Deadline chip */}
-      <div style={{
-        background: chipBg.bg, color: chipBg.fg, borderRadius: 8,
-        padding: '6px 10px', minWidth: 0,
-      }}>
-        <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>
-          {chip.top}
-        </div>
-        <div style={{ fontSize: 10.5, opacity: 0.75, marginTop: 2, fontFamily: FONTS.mono }}>
-          {chip.bottom}
-        </div>
+      {/* 1. Deadline chip — clickable to edit. stopPropagation so the
+          chip click doesn't also navigate to detail. */}
+      <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={() => setEditingDeadline(true)}
+          title="Click to change the deadline"
+          style={{
+            background: chipBg.bg, color: chipBg.fg, borderRadius: 8,
+            padding: '6px 10px', minWidth: 0, border: 'none',
+            cursor: 'pointer', width: '100%', textAlign: 'left',
+            fontFamily: FONTS.sans,
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>
+            {chip.top}
+          </div>
+          <div style={{ fontSize: 10.5, opacity: 0.75, marginTop: 2, fontFamily: FONTS.mono }}>
+            {chip.bottom}
+          </div>
+        </button>
+        {editingDeadline && (
+          <DeadlinePopover
+            sermonId={job.id}
+            currentISO={job.service_datetime}
+            onClose={() => setEditingDeadline(false)}
+            onSaved={() => {
+              setEditingDeadline(false)
+              onDeadlineChanged?.()
+            }}
+          />
+        )}
       </div>
 
       {/* 2. Client avatar */}
@@ -813,6 +837,150 @@ function SegmentedPipeline({ filled, fill }) {
           borderRadius: 2,
         }} />
       ))}
+    </div>
+  )
+}
+
+function DeadlinePopover({ sermonId, currentISO, onClose, onSaved }) {
+  // YYYY-MM-DD for the <input type="date">. If we have a stored ISO,
+  // peel off the date portion; otherwise default to today.
+  const initialDate = useMemo(() => {
+    if (currentISO) {
+      try { return new Date(currentISO).toISOString().slice(0, 10) } catch {}
+    }
+    return new Date().toISOString().slice(0, 10)
+  }, [currentISO])
+  const [date, setDate] = useState(initialDate)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const popoverRef = useRef(null)
+
+  // Click-away + Esc close. Avoids stealing focus from the input.
+  useEffect(() => {
+    function handleDown(e) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        onClose()
+      }
+    }
+    function handleKey(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handleDown)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleDown)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [onClose])
+
+  async function save() {
+    setError('')
+    setSubmitting(true)
+    try {
+      // 9am local on the chosen date matches the convention in
+      // SubmitModal (a workable "morning deliverable" time).
+      const iso = date ? `${date}T09:00:00` : null
+      await updateDeadline(sermonId, iso)
+      onSaved?.()
+    } catch (e) {
+      setError(e?.message || 'Failed to update')
+      setSubmitting(false)
+    }
+  }
+
+  async function clearDeadline() {
+    setError('')
+    setSubmitting(true)
+    try {
+      await updateDeadline(sermonId, null)
+      onSaved?.()
+    } catch (e) {
+      setError(e?.message || 'Failed to clear')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      ref={popoverRef}
+      style={{
+        position: 'absolute', top: '100%', left: 0, marginTop: 6,
+        zIndex: 50, background: COLORS.card,
+        border: `1px solid ${COLORS.line}`, borderRadius: 10,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+        padding: 12, width: 240, fontFamily: FONTS.sans,
+      }}
+    >
+      <div style={{
+        fontSize: 10.5, color: COLORS.ink3, textTransform: 'uppercase',
+        letterSpacing: 0.8, fontWeight: 500, marginBottom: 6,
+      }}>
+        Change deadline
+      </div>
+      <input
+        type="date"
+        value={date}
+        onChange={e => setDate(e.target.value)}
+        disabled={submitting}
+        autoFocus
+        style={{
+          width: '100%', padding: '7px 9px', boxSizing: 'border-box',
+          border: `1px solid ${COLORS.line}`, borderRadius: 6,
+          fontSize: 13, fontFamily: FONTS.sans, color: COLORS.ink,
+          outline: 'none',
+        }}
+      />
+      {error && (
+        <div style={{
+          fontSize: 11.5, color: COLORS.roseFg, marginTop: 6, lineHeight: 1.4,
+        }}>
+          {error}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, alignItems: 'center' }}>
+        {currentISO && (
+          <button
+            type="button"
+            onClick={clearDeadline}
+            disabled={submitting}
+            title="Remove the deadline (sermon stays in active queue but sorts last)"
+            style={{
+              background: 'transparent', color: COLORS.ink3,
+              border: 'none', padding: '6px 4px', fontSize: 11.5,
+              cursor: submitting ? 'wait' : 'pointer',
+              fontFamily: FONTS.sans,
+            }}
+          >
+            Clear
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          style={{
+            background: 'transparent', color: COLORS.ink2,
+            border: `1px solid ${COLORS.line}`, padding: '6px 12px',
+            borderRadius: 6, fontSize: 12, fontWeight: 500,
+            cursor: submitting ? 'wait' : 'pointer', fontFamily: FONTS.sans,
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={submitting}
+          style={{
+            background: COLORS.ink, color: '#fff', border: 'none',
+            padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+            cursor: submitting ? 'wait' : 'pointer', fontFamily: FONTS.sans,
+          }}
+        >
+          {submitting ? 'Saving…' : 'Save'}
+        </button>
+      </div>
     </div>
   )
 }
