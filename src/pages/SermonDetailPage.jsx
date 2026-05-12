@@ -264,15 +264,19 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     startRenderPoll()
   }
 
-  // Route a per-clip render request. Trim (overrides present) skips
-  // the options modal and dispatches immediately. Plain "Render now"
-  // (no overrides) opens the modal so the user can confirm/adjust
-  // vertical / face-tracking / crop before the render runs.
+  // Route a per-clip render request through the options modal so the
+  // user can pick vertical / face-tracking / crop on every render —
+  // including Trim. Trim carries its new in/out times through
+  // pendingRender; the modal's confirm handler passes them to
+  // dispatchRenderClip alongside the picked options. (This used to
+  // skip the modal on Trim, but the user needs the AI-tracking knob
+  // there too — a long clip with face_tracking on can OOM Railway,
+  // and Trim is exactly the moment to retry it differently.)
   function handleRenderClipRequest(clipId, startSec, endSec) {
-    if (typeof startSec === 'number' && typeof endSec === 'number') {
-      return dispatchRenderClip(clipId, startSec, endSec)
-    }
-    setPendingRender({ kind: 'clip', clipId })
+    const isTrim = typeof startSec === 'number' && typeof endSec === 'number'
+    setPendingRender(isTrim
+      ? { kind: 'clip', clipId, startSec, endSec }
+      : { kind: 'clip', clipId })
   }
 
   // "Render all" always goes through the modal (no per-clip overrides
@@ -291,7 +295,8 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     const p = pendingRender
     setPendingRender(null)
     if (p.kind === 'clip') {
-      await dispatchRenderClip(p.clipId)
+      // p.startSec / p.endSec are present only on the Trim path.
+      await dispatchRenderClip(p.clipId, p.startSec, p.endSec)
     } else if (p.kind === 'all') {
       await dispatchRenderAll()
     }
@@ -1706,13 +1711,31 @@ function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onPlay, onFa
             </div>
           )}
 
-          {clip.render_error && !clip.rendered_video_url && (
+          {clip.render_error && !clip.rendered_video_url && !rendering && (
             <div style={{
               padding: '10px 12px', fontSize: 12, marginBottom: 10,
               color: '#8b2929', background: '#fbecec', borderRadius: 6,
               fontFamily: FONTS.sans,
+              display: 'flex', alignItems: 'flex-start', gap: 10,
             }}>
-              <strong>Render failed:</strong> {clip.render_error}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, marginBottom: 3 }}>Render failed</div>
+                <div style={{ fontSize: 11.5, lineHeight: 1.45, color: '#8b2929', wordBreak: 'break-word' }}>
+                  {clip.render_error}
+                </div>
+              </div>
+              <button
+                onClick={() => onRender(clip.id)}
+                title="Re-attempt the render with the current settings, or change them in the modal that pops up."
+                style={{
+                  background: colors.ink, color: colors.paper, border: 'none',
+                  padding: '6px 12px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+                  cursor: 'pointer', fontFamily: FONTS.sans, whiteSpace: 'nowrap',
+                  alignSelf: 'center',
+                }}
+              >
+                Retry
+              </button>
             </div>
           )}
 
@@ -2117,6 +2140,9 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
   const [error, setError] = useState('')
 
   const isAll = pending?.kind === 'all'
+  const isTrim = !isAll && (
+    typeof pending?.startSec === 'number' && typeof pending?.endSec === 'number'
+  )
   const clip = !isAll
     ? (sermon?.clips || []).find(c => c.clip_id === pending?.clipId)
     : null
@@ -2126,7 +2152,9 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
 
   const title = isAll
     ? `Render ${unrenderedCount} unrendered clip${unrenderedCount !== 1 ? 's' : ''}`
-    : 'Render this clip'
+    : isTrim
+      ? `Trim & re-render — ${fmtHMS(pending.startSec)} → ${fmtHMS(pending.endSec)}`
+      : 'Render this clip'
 
   async function submit() {
     setError('')
