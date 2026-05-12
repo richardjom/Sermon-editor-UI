@@ -4,14 +4,13 @@ import { Badge } from './ui.jsx'
 export function SermonRow({ sermon, onClick, onDelete }) {
   const [hover, setHover] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  // Field-name mismatch between endpoints: GET /clients/{id}/sermons
-  // returns `title` and `date`; GET /sermon/{id} returns `title` and
-  // `sermon_date`. Tolerate both so this row shows correctly no
-  // matter which endpoint hydrated it.
-  const title = sermon.title || sermon.sermon_title || sermon.sermon_id
-  const rawDate = sermon.sermon_date || sermon.date
-  const date = rawDate
-    ? new Date(rawDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  // Both /clients/{id}/sermons and /sermon/{id} now return `title`
+  // and `sermon_date` consistently (the rename landed in the cleanup
+  // PR). Fall back to sermon_id only if the title is genuinely
+  // missing (extremely old rows).
+  const title = sermon.title || sermon.sermon_id
+  const date = sermon.sermon_date
+    ? new Date(sermon.sermon_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : ''
 
   const meta = [sermon._clientName, date].filter(Boolean).join(' · ')

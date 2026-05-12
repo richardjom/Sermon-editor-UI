@@ -25,7 +25,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Topbar, Btn, Spinner } from '../components/ui.jsx'
-import { listJobs, clientsSummary, workload as workloadAPI, updateDeadline, deleteSermon } from '../api.js'
+import { getDashboard, updateDeadline, deleteSermon } from '../api.js'
 
 /* ============================================================================
  * Design tokens (spec section 8)
@@ -187,22 +187,20 @@ function useDashboardData() {
   const refresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      // All three calls in parallel — they're independent. If one
-      // fails, surface the error but keep the others' data.
-      const [jobsRes, clientsRes, workloadRes] = await Promise.allSettled([
-        listJobs({ active: true, limit: 200 }),
-        clientsSummary(),
-        workloadAPI({ days: 7 }),
-      ])
-      if (jobsRes.status === 'fulfilled') {
-        setJobs(jobsRes.value.jobs || [])
-        setNow(jobsRes.value.now ? new Date(jobsRes.value.now) : new Date())
-        setError(null)
-      } else {
-        setError(jobsRes.reason?.message || 'Could not load jobs')
-      }
-      if (clientsRes.status === 'fulfilled') setClients(clientsRes.value.clients || [])
-      if (workloadRes.status === 'fulfilled') setDays(workloadRes.value.days || [])
+      // One round-trip via the consolidated /dashboard endpoint —
+      // returns jobs + clients summary + workload in a single
+      // payload. Atomic-ish snapshot (all three subqueries run
+      // sequentially in the same server process, no race between
+      // them) and 3× less HTTP overhead vs. the prior parallel
+      // fetch.
+      const data = await getDashboard({ active: true, jobsLimit: 200, workloadDays: 7 })
+      setJobs(data.jobs || [])
+      setNow(data.now ? new Date(data.now) : new Date())
+      setClients(data.clients || [])
+      setDays(data.workload?.days || [])
+      setError(null)
+    } catch (e) {
+      setError(e?.message || 'Could not load dashboard')
     } finally {
       setLoading(false)
       setRefreshing(false)

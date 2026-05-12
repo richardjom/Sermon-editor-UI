@@ -155,6 +155,20 @@ export async function listJobs({ active = true, limit = 100 } = {}) {
   return res.json()
 }
 
+// Single-call dashboard payload — equivalent to listJobs +
+// clientsSummary + workload, but one HTTP round-trip instead of
+// three. Returns { jobs, now, clients, workload: { days } }.
+export async function getDashboard({ active = true, jobsLimit = 200, workloadDays = 7 } = {}) {
+  const qs = new URLSearchParams({
+    active: String(active),
+    jobs_limit: String(jobsLimit),
+    workload_days: String(workloadDays),
+  })
+  const res = await fetch(`${BASE}/dashboard?${qs}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
 export async function listClients() {
   const res = await fetch(`${BASE}/clients`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
