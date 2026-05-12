@@ -4,8 +4,14 @@ import { Badge } from './ui.jsx'
 export function SermonRow({ sermon, onClick, onDelete }) {
   const [hover, setHover] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const date = sermon.sermon_date
-    ? new Date(sermon.sermon_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  // Field-name mismatch between endpoints: GET /clients/{id}/sermons
+  // returns `title` and `date`; GET /sermon/{id} returns `title` and
+  // `sermon_date`. Tolerate both so this row shows correctly no
+  // matter which endpoint hydrated it.
+  const title = sermon.title || sermon.sermon_title || sermon.sermon_id
+  const rawDate = sermon.sermon_date || sermon.date
+  const date = rawDate
+    ? new Date(rawDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : ''
 
   const meta = [sermon._clientName, date].filter(Boolean).join(' · ')
@@ -14,9 +20,8 @@ export function SermonRow({ sermon, onClick, onDelete }) {
   async function handleDeleteClick(e) {
     e.stopPropagation()
     if (deleting || !onDelete) return
-    const label = sermon.sermon_title || sermon.sermon_id
     const ok = window.confirm(
-      `Delete "${label}"?\n\nThis removes the sermon, its clips, and the source video / audio / rendered clips from storage. Notion pages stay. This cannot be undone.`
+      `Delete "${title}"?\n\nThis removes the sermon, its clips, and the source video / audio / rendered clips from storage. Notion pages stay. This cannot be undone.`
     )
     if (!ok) return
     setDeleting(true)
@@ -54,7 +59,7 @@ export function SermonRow({ sermon, onClick, onDelete }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {sermon.sermon_title || sermon.sermon_id}
+          {title}
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
           {[meta, clips].filter(Boolean).join(' · ')}
