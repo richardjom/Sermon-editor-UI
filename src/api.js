@@ -233,3 +233,24 @@ export async function deleteSermon(sermonId) {
   }
   return res.json()
 }
+
+// ----- PDF export URL builders -----
+// These return URLs that the browser can hit directly (the backend
+// sends Content-Disposition: attachment so the browser shows a Save
+// dialog). No fetch+blob roundtrip needed — just `window.location.href
+// = transcriptPdfUrl(id)` or an <a href download>.
+
+export function transcriptPdfUrl(sermonId) {
+  return `${BASE}/sermon/${sermonId}/transcript.pdf`
+}
+
+// `clipIds` is the array of clip IDs the user wants in the doc — pass
+// the IDs of the currently visible/filtered clips. Omit to export every
+// clip in the sermon.
+export function clipsPdfUrl(sermonId, clipIds) {
+  if (!clipIds || !clipIds.length) {
+    return `${BASE}/sermon/${sermonId}/clips.pdf`
+  }
+  const qs = new URLSearchParams({ ids: clipIds.join(',') }).toString()
+  return `${BASE}/sermon/${sermonId}/clips.pdf?${qs}`
+}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
-import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon } from '../api.js'
+import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon, transcriptPdfUrl, clipsPdfUrl } from '../api.js'
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -880,6 +880,7 @@ function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchiv
         allClips={allClips}
         visibleClips={visibleClips}
         sermon={sermon}
+        sermonId={sermonId}
         renderingClipIds={renderingClipIds}
         filter={filter} setFilter={setFilter}
         sort={sort} setSort={setSort}
@@ -1399,7 +1400,7 @@ function Field({ label, value, span, serif }) {
  * ========================================================================== */
 
 function RightColumn({
-  allClips, visibleClips, sermon, renderingClipIds,
+  allClips, visibleClips, sermon, sermonId, renderingClipIds,
   filter, setFilter, sort, setSort, query, setQuery,
   expandedId, onToggle, onSelect, onPlay, onFav, onArchive, onReprocess, onRenderClip,
   onCreateCustomClip, onRenderAll,
@@ -1486,6 +1487,45 @@ function RightColumn({
               <Icon name="play" size={12} color={colors.ink} />
               {bulkBusy ? 'Queuing…' : `Render ${unrenderedCount} unrendered`}
             </button>
+          )}
+          {/* PDF export buttons — backend builds and streams via
+              Content-Disposition: attachment, so a plain anchor with
+              `download` triggers the browser's Save dialog. We use <a>
+              (not <button> + window.location) so users can also
+              right-click → "Open in new tab" if they want to preview. */}
+          {sermonId && (sermon?.transcript || allClips.length > 0) && (
+            <a
+              href={transcriptPdfUrl(sermonId)}
+              download
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                background: colors.card, color: colors.ink,
+                border: `1px solid ${colors.line2}`,
+                borderRadius: 7, fontSize: 11.5, fontWeight: 500,
+                cursor: 'pointer', fontFamily: FONTS.sans,
+                textDecoration: 'none',
+              }}
+              title="Download the full sermon transcript as a PDF"
+            >
+              <Icon name="download" size={12} color={colors.ink} /> Transcript
+            </a>
+          )}
+          {sermonId && visibleClips.length > 0 && (
+            <a
+              href={clipsPdfUrl(sermonId, visibleClips.map(c => c.id))}
+              download
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                background: colors.card, color: colors.ink,
+                border: `1px solid ${colors.line2}`,
+                borderRadius: 7, fontSize: 11.5, fontWeight: 500,
+                cursor: 'pointer', fontFamily: FONTS.sans,
+                textDecoration: 'none',
+              }}
+              title={`Download the ${visibleClips.length} visible clip${visibleClips.length !== 1 ? 's' : ''} as a PDF (title, hook, caption, and transcript per clip)`}
+            >
+              <Icon name="download" size={12} color={colors.ink} /> Clip doc
+            </a>
           )}
           <button
             onClick={handleDownloadAll}
