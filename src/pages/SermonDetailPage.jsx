@@ -399,6 +399,7 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
       {!loading && sermon?.status === 'completed' && (
         <Body
           sermon={sermon}
+          sermonId={sermonId}
           clipFlags={clipFlags}
           renderingClipIds={renderingClipIds}
           onToggleFav={toggleFav}
@@ -763,7 +764,7 @@ function FailedState({ sermon, onReprocess }) {
  * Body — split layout with the source on the left, clip rail on the right
  * ========================================================================== */
 
-function Body({ sermon, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll }) {
+function Body({ sermon, sermonId, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll }) {
   // Decorate clips with derived fields the UI wants
   const allClips = useMemo(
     () => (sermon.clips || []).map(c => decorateClip(c, clipFlags, sermon.render_options)),
