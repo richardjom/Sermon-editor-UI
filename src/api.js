@@ -254,3 +254,49 @@ export function clipsPdfUrl(sermonId, clipIds) {
   const qs = new URLSearchParams({ ids: clipIds.join(',') }).toString()
   return `${BASE}/sermon/${sermonId}/clips.pdf?${qs}`
 }
+
+// ----- Direct-to-R2 upload -----
+// Two-step flow: mint a presigned PUT URL from our backend, then PUT
+// the file directly to R2. The browser never touches Railway with the
+// file bytes — Railway has request-body / timeout limits that would
+// kill a multi-GB sermon upload. See app/services/storage.py and the
+// /uploads/presign endpoint for the backend side.
+
+export async function presignUpload({ filename, contentType }) {
+  const res = await fetch(`${BASE}/uploads/presign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, content_type: contentType || 'video/mp4' }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status}: ${text || 'presign failed'}`)
+  }
+  return res.json()  // { r2_key, put_url, get_url }
+}
+
+// Upload a File to a presigned PUT URL using XHR (so we can report
+// progress — fetch() doesn't expose upload progress events natively).
+// Returns a Promise that resolves when the upload completes; calls
+// onProgress(0..1) periodically while running. Abortable via the
+// returned `abort()` function.
+export function uploadFileToR2(file, putUrl, { onProgress, contentType } = {}) {
+  const xhr = new XMLHttpRequest()
+  const done = new Promise((resolve, reject) => {
+    xhr.open('PUT', putUrl, true)
+    // Must match the Content-Type the URL was signed with, or R2 rejects
+    // the PUT with a signature-mismatch error.
+    xhr.setRequestHeader('Content-Type', contentType || file.type || 'application/octet-stream')
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`R2 PUT failed: HTTP ${xhr.status} ${xhr.responseText?.slice(0, 200) || ''}`))
+    }
+    xhr.onerror = () => reject(new Error('R2 PUT network error (check bucket CORS for PUT from this origin)'))
+    xhr.onabort = () => reject(new Error('Upload cancelled'))
+    xhr.send(file)
+  })
+  return { done, abort: () => xhr.abort() }
+}
