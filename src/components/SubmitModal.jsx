@@ -1,6 +1,19 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Modal, FormGroup, Input, Select, Btn } from './ui.jsx'
-import { submitSermon, submitSermonVideo } from '../api.js'
+import { submitSermon, submitSermonVideo, presignUpload, uploadFileToR2 } from '../api.js'
+
+// Soft client-side size cap. Anything larger is almost certainly a
+// mistake (wrong file, raw camera capture) and would take ages on a
+// residential connection — better to bounce it before the upload
+// starts than discover it 40 minutes in.
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024 // 5 GB
+
+function humanBytes(n) {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
 
 // Render options used to live on this modal, but with deferred-render
 // as the default they aren't consumed at submit time — they sit on
@@ -29,6 +42,14 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Direct-upload state. `uploadProgress` is 0..1 while a PUT is in
+  // flight; `uploading` toggles the spinner. `uploadAbort` holds the
+  // abort callback returned from uploadFileToR2 so the user can cancel
+  // mid-upload (large sermons can take many minutes).
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const uploadAbortRef = useRef(null)
+
   // Pipeline still lives here — it determines which API endpoint to
   // call (/process-sermon-video vs /process-sermon) and isn't editable
   // after the fact.
@@ -42,11 +63,65 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
   function handleDrop(e) {
     e.preventDefault()
     const file = e.dataTransfer.files[0]
-    if (file) setFileName(file.name)
+    if (file) startUpload(file)
   }
   function handleFile(e) {
     const file = e.target.files[0]
-    if (file) setFileName(file.name)
+    if (file) startUpload(file)
+  }
+
+  // Two-step direct-to-R2 upload:
+  //   1. Backend mints a presigned PUT URL scoped to one key + one
+  //      content-type.
+  //   2. Browser PUTs the file bytes directly to R2 (no Railway in
+  //      between). On success we drop the resulting GET URL into the
+  //      `url` field and the user can hit Submit as if they'd pasted
+  //      a Dropbox link.
+  async function startUpload(file) {
+    setError('')
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`File is ${humanBytes(file.size)} — over the ${humanBytes(MAX_UPLOAD_BYTES)} cap. Wrong file, or contact us to raise it.`)
+      return
+    }
+
+    const contentType = file.type || (pipeline === 'video' ? 'video/mp4' : 'audio/mpeg')
+
+    setFileName(file.name)
+    setUploading(true)
+    setUploadProgress(0)
+    setUrl('')
+
+    try {
+      const { put_url, get_url } = await presignUpload({
+        filename: file.name,
+        contentType,
+      })
+      const handle = uploadFileToR2(file, put_url, {
+        contentType,
+        onProgress: (p) => setUploadProgress(p),
+      })
+      uploadAbortRef.current = handle.abort
+      await handle.done
+      // Fill the URL field — submit becomes available immediately.
+      setUrl(get_url)
+    } catch (e) {
+      // Distinguish cancel from real failure so the user isn't shown
+      // a scary error after they hit Cancel themselves.
+      const msg = String(e?.message || e)
+      if (msg.includes('cancelled')) {
+        setFileName('')
+      } else {
+        setError(`Upload failed: ${msg}`)
+      }
+    } finally {
+      uploadAbortRef.current = null
+      setUploading(false)
+    }
+  }
+
+  function cancelUpload() {
+    if (uploadAbortRef.current) uploadAbortRef.current()
   }
 
   async function handleSubmit() {
@@ -98,8 +173,8 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
       footer={
         <>
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn primary onClick={handleSubmit} disabled={loading}>
-            {loading ? 'Submitting…' : 'Submit sermon'}
+          <Btn primary onClick={handleSubmit} disabled={loading || uploading}>
+            {loading ? 'Submitting…' : (uploading ? 'Uploading…' : 'Submit sermon')}
           </Btn>
         </>
       }
@@ -155,26 +230,70 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
       <div
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        onClick={() => document.getElementById('file-input-modal').click()}
+        onClick={() => {
+          if (uploading) return
+          document.getElementById('file-input-modal').click()
+        }}
         style={{
           border: '1px dashed var(--border-mid)',
           borderRadius: 8, padding: '1.5rem',
-          textAlign: 'center', cursor: 'pointer',
+          textAlign: 'center', cursor: uploading ? 'default' : 'pointer',
           background: 'var(--surface-2)',
           transition: 'background 0.12s',
+          opacity: uploading ? 0.95 : 1,
         }}
       >
-        <input id="file-input-modal" type="file" accept={acceptTypes} style={{ display: 'none' }} onChange={handleFile} />
+        <input
+          id="file-input-modal"
+          type="file"
+          accept={acceptTypes}
+          style={{ display: 'none' }}
+          onChange={handleFile}
+          disabled={uploading}
+        />
         <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
           {fileName || dropHint}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>or click to browse</div>
+        {!fileName && (
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>or click to browse</div>
+        )}
+        {/* Upload progress / completion UI. While uploading, show a bar
+            and a Cancel link. When upload completes, the URL field fills
+            in automatically — show a checkmark line confirming. */}
+        {uploading && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{
+              height: 6, borderRadius: 3, overflow: 'hidden',
+              background: 'var(--border)',
+            }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.round(uploadProgress * 100)}%`,
+                background: 'var(--text)',
+                transition: 'width 0.15s',
+              }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--text-3)' }}>
+              <span>{Math.round(uploadProgress * 100)}% uploaded</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); cancelUpload() }}
+                style={{
+                  background: 'none', border: 'none', padding: 0,
+                  color: 'var(--text-3)', cursor: 'pointer',
+                  fontSize: 11, textDecoration: 'underline',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {!uploading && fileName && url && (
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 8 }}>
+            Uploaded — ready to submit.
+          </div>
+        )}
       </div>
-      {fileName && (
-        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 8 }}>
-          Direct upload not yet supported by the API. Add a hosted URL above to submit.
-        </div>
-      )}
       {error && (
         <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red-text)', background: 'var(--red-bg)', padding: '8px 10px', borderRadius: 6 }}>
           {error}
