@@ -2154,11 +2154,13 @@ function TrimField({ label, value, onChange }) {
 // in sync when adding/removing templates. Frontend doesn't need the
 // full style block, just the picker-display metadata.
 const CAPTION_TEMPLATES_UI = [
-  { value: 'bold_yellow',     label: 'Bold Yellow',     description: 'TikTok classic — yellow karaoke highlight on white.' },
-  { value: 'clean_white',     label: 'Clean White',     description: 'Minimal — white active on dim gray, lighter outline.' },
-  { value: 'brand',           label: 'Brand',           description: 'Your brand color as the highlight (set hex below).' },
-  { value: 'bold_punch',      label: 'Bold Punch',      description: 'Big, heavy, high-contrast — Mr. Beast / stadium.' },
-  { value: 'serif_editorial', label: 'Serif Editorial', description: 'Calmer — serif font, smaller, soft gray inactive.' },
+  { value: 'uppercase_yellow', label: 'Bold Caps — Yellow', description: 'ALL CAPS bold sans, yellow karaoke highlight on white. Furtick-style.' },
+  { value: 'uppercase_white',  label: 'Bold Caps — White',  description: 'ALL CAPS bold sans, single-color white (no karaoke highlight). Clean stage look.' },
+  { value: 'bold_yellow',      label: 'Bold Yellow',        description: 'Mixed case — yellow karaoke highlight on white.' },
+  { value: 'clean_white',      label: 'Clean White',        description: 'Minimal — white active on dim gray, lighter outline.' },
+  { value: 'brand',            label: 'Brand',              description: 'Your brand color as the highlight (set hex below).' },
+  { value: 'bold_punch',       label: 'Bold Punch',         description: 'Big, heavy, high-contrast — Mr. Beast / stadium.' },
+  { value: 'serif_editorial',  label: 'Serif Editorial',    description: 'Calmer — serif font, smaller, soft gray inactive.' },
 ]
 
 function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
