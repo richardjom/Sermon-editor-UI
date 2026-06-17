@@ -2157,6 +2157,7 @@ const CAPTION_TEMPLATES_UI = [
   { value: 'uppercase_reveal', label: 'Bold Caps — Word Reveal', description: 'ALL CAPS bold white, each word pops in as it\'s spoken. No color shift.' },
   { value: 'uppercase_yellow', label: 'Bold Caps — Yellow',      description: 'ALL CAPS bold sans, yellow karaoke highlight on white. Furtick-style.' },
   { value: 'uppercase_white',  label: 'Bold Caps — White',       description: 'ALL CAPS bold sans, single-color white (no karaoke highlight). Clean stage look.' },
+  { value: 'uppercase_no_outline', label: 'Bold Caps — No Outline', description: 'ALL CAPS bold white, no outline (soft shadow only for legibility).' },
   { value: 'bold_yellow',      label: 'Bold Yellow',             description: 'Mixed case — yellow karaoke highlight on white.' },
   { value: 'clean_white',      label: 'Clean White',             description: 'Minimal — white active on dim gray, lighter outline.' },
   { value: 'brand',            label: 'Brand',                   description: 'Your brand color as the highlight (set hex below).' },
