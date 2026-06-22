@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
+import { CaptionEditor } from '../components/CaptionEditor.jsx'
 import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon, transcriptPdfUrl, clipsPdfUrl } from '../api.js'
 
 /* ============================================================================
@@ -241,6 +242,22 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
     startRenderPoll()
   }
 
+  // Caption editor render: re-render a clip with per-clip caption
+  // position/outline overrides. Same tracking + poll as a normal render;
+  // just threads the two extra optional params to the API.
+  async function dispatchCaptionRender(clipId, { captionPosition, captionOutline } = {}) {
+    setRenderingClipIds(prev => new Set(prev).add(clipId))
+    try {
+      await renderClip(clipId, { captionPosition, captionOutline })
+    } catch (e) {
+      setRenderingClipIds(prev => {
+        const next = new Set(prev); next.delete(clipId); return next
+      })
+      throw e
+    }
+    startRenderPoll()
+  }
+
   async function dispatchRenderAll() {
     if (!sermon) return
     const targets = (sermon.clips || []).filter(c => !c.rendered_video_url)
@@ -406,6 +423,7 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
           onToggleArchived={toggleArchived}
           onReprocess={handleReprocess}
           onRenderClip={handleRenderClipRequest}
+          onCaptionRender={dispatchCaptionRender}
           onCreateCustomClip={handleCreateCustomClip}
           onRenderAll={handleRenderAllRequest}
         />
@@ -764,7 +782,7 @@ function FailedState({ sermon, onReprocess }) {
  * Body — split layout with the source on the left, clip rail on the right
  * ========================================================================== */
 
-function Body({ sermon, sermonId, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCreateCustomClip, onRenderAll }) {
+function Body({ sermon, sermonId, clipFlags, renderingClipIds, onToggleFav, onToggleArchived, onReprocess, onRenderClip, onCaptionRender, onCreateCustomClip, onRenderAll }) {
   // Decorate clips with derived fields the UI wants
   const allClips = useMemo(
     () => (sermon.clips || []).map(c => decorateClip(c, clipFlags, sermon.render_options)),
@@ -897,6 +915,7 @@ function Body({ sermon, sermonId, clipFlags, renderingClipIds, onToggleFav, onTo
         onArchive={onToggleArchived}
         onReprocess={onReprocess}
         onRenderClip={onRenderClip}
+        onCaptionRender={onCaptionRender}
         onCreateCustomClip={onCreateCustomClip}
         onRenderAll={onRenderAll}
       />
@@ -1404,7 +1423,7 @@ function RightColumn({
   allClips, visibleClips, sermon, sermonId, renderingClipIds,
   filter, setFilter, sort, setSort, query, setQuery,
   expandedId, onToggle, onSelect, onPlay, onFav, onArchive, onReprocess, onRenderClip,
-  onCreateCustomClip, onRenderAll,
+  onCaptionRender, onCreateCustomClip, onRenderAll,
 }) {
   const [customOpen, setCustomOpen] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -1610,6 +1629,7 @@ function RightColumn({
           <ClipRow
             key={c.id}
             clip={c}
+            sermon={sermon}
             sermonTitle={sermon.title}
             expanded={expandedId === c.id}
             rendering={renderingClipIds?.has(c.id)}
@@ -1620,6 +1640,7 @@ function RightColumn({
             onArchive={onArchive}
             onRender={(id) => onRenderClip?.(id)}
             onTrim={(id, startSec, endSec) => onRenderClip?.(id, startSec, endSec)}
+            onCaptionRender={onCaptionRender}
           />
         ))}
         {visibleClips.length === 0 && (
@@ -1653,10 +1674,11 @@ function RightColumn({
 
 /* ---------- Single clip row (collapsed + expanded) ---------- */
 
-function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onPlay, onFav, onArchive, onRender, onTrim, rendering }) {
+function ClipRow({ clip, sermon, sermonTitle, expanded, onToggle, onSelect, onPlay, onFav, onArchive, onRender, onTrim, onCaptionRender, rendering }) {
   const accent = clip.score === 'High' ? colors.high : colors.med
   const [copied, setCopied] = useState(null) // 'hook' | 'caption' | 'transcript' | null
   const [trimOpen, setTrimOpen] = useState(false)
+  const [captionOpen, setCaptionOpen] = useState(false)
 
   function copy(text, key) {
     if (!text) return
@@ -1870,6 +1892,13 @@ function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onPlay, onFa
               title={rendering ? 'Wait for current render to finish' : 'Adjust in/out times and re-render'}
             />
             <Action
+              icon="edit"
+              label="Captions"
+              onClick={() => setCaptionOpen(true)}
+              disabled={rendering}
+              title={rendering ? 'Wait for current render to finish' : 'Preview & adjust caption position / outline, then re-render'}
+            />
+            <Action
               icon="copy"
               label={copied === 'hook' ? 'Copied' : 'Copy hook'}
               onClick={() => copy(clip.suggested_hook || clip.title, 'hook')}
@@ -1907,6 +1936,15 @@ function ClipRow({ clip, sermonTitle, expanded, onToggle, onSelect, onPlay, onFa
             setTrimOpen(false)
             onTrim(clip.id, startSec, endSec)
           }}
+        />
+      )}
+
+      {captionOpen && (
+        <CaptionEditor
+          clip={clip}
+          sermon={sermon}
+          onRender={(id, payload) => onCaptionRender?.(id, payload)}
+          onClose={() => setCaptionOpen(false)}
         />
       )}
     </div>
