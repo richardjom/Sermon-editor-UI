@@ -245,10 +245,10 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   // Caption editor render: re-render a clip with per-clip caption
   // position/outline overrides. Same tracking + poll as a normal render;
   // just threads the two extra optional params to the API.
-  async function dispatchCaptionRender(clipId, { captionPosition, captionOutline } = {}) {
+  async function dispatchCaptionRender(clipId, { captionPosition, captionOutline, captionFont, captionUppercase } = {}) {
     setRenderingClipIds(prev => new Set(prev).add(clipId))
     try {
-      await renderClip(clipId, { captionPosition, captionOutline })
+      await renderClip(clipId, { captionPosition, captionOutline, captionFont, captionUppercase })
     } catch (e) {
       setRenderingClipIds(prev => {
         const next = new Set(prev); next.delete(clipId); return next
@@ -2202,6 +2202,7 @@ const CAPTION_TEMPLATES_UI = [
   { value: 'brand',            label: 'Brand',                   description: 'Your brand color as the highlight (set hex below).' },
   { value: 'bold_punch',       label: 'Bold Punch',              description: 'Big, heavy, high-contrast — Mr. Beast / stadium.' },
   { value: 'serif_editorial',  label: 'Serif Editorial',         description: 'Calmer — serif font, smaller, soft gray inactive.' },
+  { value: 'elegant_serif',    label: 'Elegant Serif — White',   description: 'Refined serif, natural casing, white, no outline. Worship / testimony vibe.' },
 ]
 
 function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
