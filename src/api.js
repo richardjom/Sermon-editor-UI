@@ -61,14 +61,16 @@ export async function reprocessSermon(id) {
 //   - Trim → pass new in/out as start_seconds + end_seconds
 // Backend queues a background task and returns immediately; poll
 // GET /sermon/{sermon_id} for completion (rendered_video_url appears).
-export async function renderClip(clipId, { startSeconds, endSeconds, captionPosition, captionOutline } = {}) {
+export async function renderClip(clipId, { startSeconds, endSeconds, captionPosition, captionOutline, captionFont, captionUppercase } = {}) {
   const body = {}
   if (typeof startSeconds === 'number') body.start_seconds = startSeconds
   if (typeof endSeconds === 'number') body.end_seconds = endSeconds
-  // Caption editor (Phase 1) per-clip overrides. Omitted → backend uses
-  // the sermon template/render_options exactly as before.
+  // Caption editor per-clip overrides. Omitted → backend uses the
+  // sermon template/render_options exactly as before.
   if (typeof captionPosition === 'number') body.caption_position = captionPosition
   if (typeof captionOutline === 'number') body.caption_outline = captionOutline
+  if (typeof captionFont === 'string' && captionFont) body.caption_font = captionFont
+  if (typeof captionUppercase === 'boolean') body.caption_uppercase = captionUppercase
   const res = await fetch(`${BASE}/clip/${clipId}/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
