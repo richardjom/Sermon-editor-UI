@@ -107,8 +107,8 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
     ? `0 0 ${(outlinePx ?? 3) + 1}px #000, 0 0 ${(outlinePx ?? 3) + 1}px #000, 0 1px 2px rgba(0,0,0,.6)`
     : '0 1px 3px rgba(0,0,0,.55)'
   const textTransform = casing === 'caps' ? 'uppercase' : 'none'
-  // Pan the preview to match manual framing (only when previewing 9:16).
-  const objectPosition = (ratio === '9:16' && defaultVertical && framingMode === 'manual')
+  // Pan the preview to match manual framing (only in 9:16).
+  const objectPosition = (ratio === '9:16' && framingMode === 'manual')
     ? `${framing}% 50%` : '50% 50%'
 
   async function apply() {
@@ -121,9 +121,11 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
       else if (weight === 'regular') payload.captionBold = false
       if (casing === 'caps') payload.captionUppercase = true
       else if (casing === 'natural') payload.captionUppercase = false
+      // The 9:16 / 16:9 toggle is authoritative for THIS clip's export.
+      payload.vertical = ratio === '9:16'
       // Only override framing when the user opted into manual — otherwise the
       // server keeps auto face-tracking untouched.
-      if (defaultVertical && framingMode === 'manual') payload.manualFrameX = Number(framing)
+      if (ratio === '9:16' && framingMode === 'manual') payload.manualFrameX = Number(framing)
       save(clip.id, { ratio, position, outline, font, weight, casing, framingMode, framing })
       await onRender?.(clip.id, payload)
       onApplied?.(); onClose?.()
@@ -179,16 +181,15 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
           <button onClick={() => { const v = videoRef.current; if (v) { v.paused ? v.play() : v.pause() } }} style={{ ...btn, flex: 1 }}>Play / pause</button>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {['9:16', '16:9'].map(r => (
-              <button key={r} onClick={() => setRatio(r)} style={{ ...btn, padding: '8px 10px', ...(ratio === r ? sel : {}) }}>{r}</button>
-            ))}
-          </div>
         </div>
 
         {/* controls */}
         <div style={{ marginTop: 16 }}>
-          {defaultVertical && (
+          <label style={lbl}>Export ratio</label>
+          <Seg options={[['9:16', '9:16 vertical'], ['16:9', '16:9 wide']]} value={ratio} onChange={setRatio} />
+
+          <div style={{ height: 14 }} />
+          {ratio === '9:16' && (
             <div style={{ marginBottom: 14 }}>
               <label style={lbl}>Framing (9:16 crop)</label>
               <Seg options={[['auto', 'Auto — follow speaker'], ['manual', 'Manual']]} value={framingMode} onChange={setFramingMode} />
