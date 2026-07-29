@@ -245,10 +245,10 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   // Caption editor render: re-render a clip with per-clip caption
   // position/outline overrides. Same tracking + poll as a normal render;
   // just threads the two extra optional params to the API.
-  async function dispatchCaptionRender(clipId, { captionPosition, captionOutline, captionFont, captionUppercase, captionBold, manualFrameX, vertical } = {}) {
+  async function dispatchCaptionRender(clipId, { captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical } = {}) {
     setRenderingClipIds(prev => new Set(prev).add(clipId))
     try {
-      await renderClip(clipId, { captionPosition, captionOutline, captionFont, captionUppercase, captionBold, manualFrameX, vertical })
+      await renderClip(clipId, { captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical })
     } catch (e) {
       setRenderingClipIds(prev => {
         const next = new Set(prev); next.delete(clipId); return next

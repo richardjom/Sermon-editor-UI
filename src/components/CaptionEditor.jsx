@@ -73,6 +73,11 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
   const [font, setFont] = useState(saved?.font ?? '')
   const [weight, setWeight] = useState(saved?.weight ?? 'default') // default | regular | bold
   const [casing, setCasing] = useState(saved?.casing ?? 'default')  // default | natural | caps
+  // Karaoke "active word" highlight. 'default' sends nothing (template's
+  // color, usually yellow); 'off' disables the pop; 'white'/'yellow' are
+  // presets; 'custom' uses the color picker below.
+  const [highlight, setHighlight] = useState(saved?.highlight ?? 'default')
+  const [highlightColor, setHighlightColor] = useState(saved?.highlightColor ?? '#FFD400')
   // Framing (vertical crop). 'auto' = server face-tracking (today's behavior,
   // sends nothing); 'manual' = fixed horizontal crop at `framing`% (0=left,
   // 50=center, 100=right). Only ever sent when the user opts into 'manual'.
@@ -110,6 +115,14 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
   // Pan the preview to match manual framing (only in 9:16).
   const objectPosition = (ratio === '9:16' && framingMode === 'manual')
     ? `${framing}% 50%` : '50% 50%'
+  // Highlight color shown on the "active" word in the preview. 'default'
+  // approximates the template default (yellow, the common case).
+  const HL_HEX = { white: '#FFFFFF', yellow: '#FFD400', default: '#FFD400' }
+  const activeWordColor =
+    highlight === 'off' ? '#fff'
+    : highlight === 'custom' ? highlightColor
+    : (HL_HEX[highlight] || '#fff')
+  const previewWords = useMemo(() => sampleText.split(/\s+/).filter(Boolean), [sampleText])
 
   async function apply() {
     setSubmitting(true); setErr('')
@@ -121,12 +134,18 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
       else if (weight === 'regular') payload.captionBold = false
       if (casing === 'caps') payload.captionUppercase = true
       else if (casing === 'natural') payload.captionUppercase = false
+      // Highlight: 'default' sends nothing (keeps template color); 'off' →
+      // "none" (no pop); presets/custom → hex.
+      if (highlight === 'off') payload.captionHighlight = 'none'
+      else if (highlight === 'custom') payload.captionHighlight = highlightColor
+      else if (highlight === 'white') payload.captionHighlight = '#FFFFFF'
+      else if (highlight === 'yellow') payload.captionHighlight = '#FFD400'
       // The 9:16 / 16:9 toggle is authoritative for THIS clip's export.
       payload.vertical = ratio === '9:16'
       // Only override framing when the user opted into manual — otherwise the
       // server keeps auto face-tracking untouched.
       if (ratio === '9:16' && framingMode === 'manual') payload.manualFrameX = Number(framing)
-      save(clip.id, { ratio, position, outline, font, weight, casing, framingMode, framing })
+      save(clip.id, { ratio, position, outline, font, weight, casing, highlight, highlightColor, framingMode, framing })
       await onRender?.(clip.id, payload)
       onApplied?.(); onClose?.()
     } catch (e) {
@@ -176,7 +195,13 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
               fontFamily: fontDef.css, fontWeight: previewWeight, fontSize, lineHeight: 1.15,
               color: '#fff', textShadow, textTransform,
               WebkitTextStroke: (outlinePx && outlinePx > 0) ? `${Math.max(1, Math.round(outlinePx * 0.6))}px #000` : undefined,
-            }}>{sampleText}</span>
+            }}>
+              {previewWords.map((w, i) => (
+                <span key={i} style={{ color: i === 0 ? activeWordColor : '#fff' }}>
+                  {w}{i < previewWords.length - 1 ? ' ' : ''}
+                </span>
+              ))}
+            </span>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
@@ -230,6 +255,19 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
 
           <label style={{ ...lbl, marginTop: 14 }}>Outline</label>
           <Seg options={[['default', 'Default'], ['none', 'None'], ['thin', 'Thin'], ['thick', 'Thick']]} value={outline} onChange={setOutline} />
+
+          <label style={{ ...lbl, marginTop: 14 }}>Highlight (active word)</label>
+          <Seg options={[['default', 'Default'], ['off', 'Off'], ['white', 'White'], ['yellow', 'Yellow'], ['custom', 'Custom']]} value={highlight} onChange={setHighlight} />
+          {highlight === 'custom' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+              <input type="color" value={highlightColor} onChange={e => setHighlightColor(e.target.value)}
+                style={{ width: 44, height: 32, padding: 0, border: '1px solid #d9d4c9', borderRadius: 7, background: '#fff', cursor: 'pointer' }} />
+              <span style={{ fontSize: 12, color: '#5f5a51' }}>{String(highlightColor).toUpperCase()}</span>
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: '#8a857c', marginTop: 6, lineHeight: 1.4 }}>
+            The word being spoken pops to this color. “Off” makes every word one solid color (no yellow).
+          </div>
         </div>
 
         {err && <div style={{ marginTop: 12, fontSize: 12, color: '#b42318', background: '#fdeceb', padding: '8px 10px', borderRadius: 6 }}>{err}</div>}
