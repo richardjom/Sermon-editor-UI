@@ -73,6 +73,11 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
   const [font, setFont] = useState(saved?.font ?? '')
   const [weight, setWeight] = useState(saved?.weight ?? 'default') // default | regular | bold
   const [casing, setCasing] = useState(saved?.casing ?? 'default')  // default | natural | caps
+  // Framing (vertical crop). 'auto' = server face-tracking (today's behavior,
+  // sends nothing); 'manual' = fixed horizontal crop at `framing`% (0=left,
+  // 50=center, 100=right). Only ever sent when the user opts into 'manual'.
+  const [framingMode, setFramingMode] = useState(saved?.framingMode ?? 'auto')
+  const [framing, setFraming] = useState(saved?.framing ?? 50)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
 
@@ -102,6 +107,9 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
     ? `0 0 ${(outlinePx ?? 3) + 1}px #000, 0 0 ${(outlinePx ?? 3) + 1}px #000, 0 1px 2px rgba(0,0,0,.6)`
     : '0 1px 3px rgba(0,0,0,.55)'
   const textTransform = casing === 'caps' ? 'uppercase' : 'none'
+  // Pan the preview to match manual framing (only when previewing 9:16).
+  const objectPosition = (ratio === '9:16' && defaultVertical && framingMode === 'manual')
+    ? `${framing}% 50%` : '50% 50%'
 
   async function apply() {
     setSubmitting(true); setErr('')
@@ -113,7 +121,10 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
       else if (weight === 'regular') payload.captionBold = false
       if (casing === 'caps') payload.captionUppercase = true
       else if (casing === 'natural') payload.captionUppercase = false
-      save(clip.id, { ratio, position, outline, font, weight, casing })
+      // Only override framing when the user opted into manual — otherwise the
+      // server keeps auto face-tracking untouched.
+      if (defaultVertical && framingMode === 'manual') payload.manualFrameX = Number(framing)
+      save(clip.id, { ratio, position, outline, font, weight, casing, framingMode, framing })
       await onRender?.(clip.id, payload)
       onApplied?.(); onClose?.()
     } catch (e) {
@@ -154,7 +165,7 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
         }}>
           {sermon?.source_video_url ? (
             <video ref={videoRef} src={sermon.source_video_url} muted playsInline preload="metadata"
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition }} />
           ) : (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: 12 }}>No source preview</div>
           )}
@@ -177,6 +188,29 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
 
         {/* controls */}
         <div style={{ marginTop: 16 }}>
+          {defaultVertical && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={lbl}>Framing (9:16 crop)</label>
+              <Seg options={[['auto', 'Auto — follow speaker'], ['manual', 'Manual']]} value={framingMode} onChange={setFramingMode} />
+              {framingMode === 'manual' ? (
+                <>
+                  <input type="range" min="0" max="100" value={framing}
+                    onChange={e => setFraming(Number(e.target.value))}
+                    style={{ width: '100%', marginTop: 10 }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8a857c', marginTop: 2 }}>
+                    <span>← Left</span>
+                    <span>{framing === 50 ? 'Center' : `${framing}%`}</span>
+                    <span>Right →</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#8a857c', marginTop: 6, lineHeight: 1.4 }}>
+                  The render auto-follows the speaker (preview center-crops). Switch to Manual to place the crop yourself and preview it.
+                </div>
+              )}
+            </div>
+          )}
+
           <label style={lbl}>Font</label>
           <select value={font} onChange={e => setFont(e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', borderRadius: 7, border: '1px solid #d9d4c9', fontSize: 13, background: '#fff', color: '#2a2620' }}>

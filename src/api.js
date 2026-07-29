@@ -61,7 +61,7 @@ export async function reprocessSermon(id) {
 //   - Trim → pass new in/out as start_seconds + end_seconds
 // Backend queues a background task and returns immediately; poll
 // GET /sermon/{sermon_id} for completion (rendered_video_url appears).
-export async function renderClip(clipId, { startSeconds, endSeconds, captionPosition, captionOutline, captionFont, captionUppercase, captionBold } = {}) {
+export async function renderClip(clipId, { startSeconds, endSeconds, captionPosition, captionOutline, captionFont, captionUppercase, captionBold, manualFrameX } = {}) {
   const body = {}
   if (typeof startSeconds === 'number') body.start_seconds = startSeconds
   if (typeof endSeconds === 'number') body.end_seconds = endSeconds
@@ -72,6 +72,8 @@ export async function renderClip(clipId, { startSeconds, endSeconds, captionPosi
   if (typeof captionFont === 'string' && captionFont) body.caption_font = captionFont
   if (typeof captionUppercase === 'boolean') body.caption_uppercase = captionUppercase
   if (typeof captionBold === 'boolean') body.caption_bold = captionBold
+  // Manual framing (0-100, 50=center) for vertical output; skips face tracking.
+  if (typeof manualFrameX === 'number') body.manual_frame_x = manualFrameX
   const res = await fetch(`${BASE}/clip/${clipId}/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
