@@ -87,6 +87,18 @@ export async function renderClip(clipId, { startSeconds, endSeconds, captionPosi
   return res.json()
 }
 
+// Rewrite a single clip's social caption with a fresh, post-ready draft
+// (hook line + takeaway + engagement ask + hashtags) instead of the
+// transcript-ish default. Runs synchronously and returns the new caption.
+export async function regenerateCaption(clipId) {
+  const res = await fetch(`${BASE}/clip/${clipId}/regenerate-caption`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json() // { clip_id, suggested_caption }
+}
+
 // Create a custom clip on an existing sermon at a user-supplied
 // time range. The backend snaps start/end to the nearest word
 // boundaries when the sermon has word_transcript_json. Set
