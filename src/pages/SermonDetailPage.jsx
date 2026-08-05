@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
 import { CaptionEditor } from '../components/CaptionEditor.jsx'
-import { getSermon, reprocessSermon, renderClip, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon, transcriptPdfUrl, clipsPdfUrl } from '../api.js'
+import { getSermon, reprocessSermon, renderClip, regenerateCaption, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon, transcriptPdfUrl, clipsPdfUrl } from '../api.js'
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -1679,6 +1679,26 @@ function ClipRow({ clip, sermon, sermonTitle, expanded, onToggle, onSelect, onPl
   const [copied, setCopied] = useState(null) // 'hook' | 'caption' | 'transcript' | null
   const [trimOpen, setTrimOpen] = useState(false)
   const [captionOpen, setCaptionOpen] = useState(false)
+  // Locally-overridden caption after a Regenerate (falls back to the
+  // clip's stored caption until then). The backend also persists it, so a
+  // later sermon refresh keeps this value.
+  const [captionOverride, setCaptionOverride] = useState(null)
+  const [regenLoading, setRegenLoading] = useState(false)
+  const [regenErr, setRegenErr] = useState('')
+  const displayCaption = captionOverride ?? clip.suggested_caption
+
+  async function regenCaption() {
+    setRegenLoading(true); setRegenErr('')
+    try {
+      const res = await regenerateCaption(clip.id)
+      if (res?.suggested_caption) setCaptionOverride(res.suggested_caption)
+      else setRegenErr('Empty result. Try again.')
+    } catch (e) {
+      setRegenErr('Could not regenerate. Try again.')
+    } finally {
+      setRegenLoading(false)
+    }
+  }
 
   function copy(text, key) {
     if (!text) return
@@ -1849,20 +1869,43 @@ function ClipRow({ clip, sermon, sermonTitle, expanded, onToggle, onSelect, onPl
           )}
 
           {/* Caption preview */}
-          {clip.suggested_caption && (
+          {displayCaption && (
             <div style={{ marginBottom: 10 }}>
               <div style={{
-                fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
-                letterSpacing: 1.2, marginBottom: 4, fontFamily: FONTS.sans,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 8, marginBottom: 4,
               }}>
-                Caption draft
+                <div style={{
+                  fontSize: 10.5, color: colors.muted, textTransform: 'uppercase',
+                  letterSpacing: 1.2, fontFamily: FONTS.sans,
+                }}>
+                  Caption draft
+                </div>
+                <button
+                  onClick={regenCaption}
+                  disabled={regenLoading}
+                  title="Rewrite as a real post caption: hook line, takeaway, engagement ask, hashtags"
+                  style={{
+                    fontSize: 10.5, fontFamily: FONTS.sans,
+                    cursor: regenLoading ? 'default' : 'pointer',
+                    color: colors.muted, background: 'transparent',
+                    border: `1px solid ${colors.line2}`, borderRadius: 4,
+                    padding: '2px 8px', opacity: regenLoading ? 0.6 : 1, whiteSpace: 'nowrap',
+                  }}>
+                  {regenLoading ? 'Rewriting…' : '↻ Regenerate'}
+                </button>
               </div>
               <div style={{
                 fontSize: 12.5, lineHeight: 1.55, color: colors.body,
-                fontFamily: FONTS.sans,
+                fontFamily: FONTS.sans, whiteSpace: 'pre-wrap',
               }}>
-                {clip.suggested_caption}
+                {displayCaption}
               </div>
+              {regenErr && (
+                <div style={{ fontSize: 11, color: colors.high, marginTop: 4, fontFamily: FONTS.sans }}>
+                  {regenErr}
+                </div>
+              )}
             </div>
           )}
 
@@ -1907,8 +1950,8 @@ function ClipRow({ clip, sermon, sermonTitle, expanded, onToggle, onSelect, onPl
             <Action
               icon="copy"
               label={copied === 'caption' ? 'Copied' : 'Copy caption'}
-              onClick={() => copy(clip.suggested_caption, 'caption')}
-              disabled={!clip.suggested_caption}
+              onClick={() => copy(displayCaption, 'caption')}
+              disabled={!displayCaption}
             />
             <Action icon="share" label="Share" disabled title="Coming soon" />
             <Action
