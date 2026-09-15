@@ -2246,6 +2246,7 @@ const CAPTION_TEMPLATES_UI = [
   { value: 'bold_punch',       label: 'Bold Punch',              description: 'Big, heavy, high-contrast — Mr. Beast / stadium.' },
   { value: 'serif_editorial',  label: 'Serif Editorial',         description: 'Calmer — serif font, smaller, soft gray inactive.' },
   { value: 'elegant_serif',    label: 'Elegant Serif — White',   description: 'Refined serif, natural casing, white, no outline. Worship / testimony vibe.' },
+  { value: 'serif_accent',     label: 'Serif Accent',            description: 'Heavy sans with the clip\'s punch words set in Fraunces italic. Editorial social look.' },
 ]
 
 function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
@@ -2264,6 +2265,9 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
   )
   const [captionTemplate, setCaptionTemplate] = useState(initial.caption_template || 'bold_yellow')
   const [brandColor, setBrandColor] = useState(initial.brand_color || '')
+  // Word animation: reveal (karaoke word-by-word, default) vs hold (whole
+  // phrase static). initial.reveal === false → Hold; otherwise Reveal.
+  const [reveal, setReveal] = useState(initial.reveal !== false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -2301,6 +2305,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
         face_tracking: faceTracking,
         crop_lower_third: crop === 'auto' ? null : crop === 'on',
         caption_template: captionTemplate || 'bold_yellow',
+        reveal,
       }
       // Only send brand_color when relevant — keeps PATCH clean.
       if (captionTemplate === 'brand') {
@@ -2467,6 +2472,34 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
                 </div>
               </div>
             )}
+
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans, marginBottom: 4 }}>
+                Word animation
+              </div>
+              <div style={{ fontSize: 11.5, color: colors.dim, marginBottom: 8, lineHeight: 1.45 }}>
+                Reveal highlights each word as it’s spoken. Hold shows the whole phrase at once.
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[['Reveal', true], ['Hold', false]].map(([label, val]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => setReveal(val)}
+                    style={{
+                      flex: 1, padding: '8px 10px', borderRadius: 6, fontSize: 12.5,
+                      fontFamily: FONTS.sans, cursor: submitting ? 'wait' : 'pointer',
+                      border: `1px solid ${reveal === val ? colors.ink : colors.line2}`,
+                      background: reveal === val ? colors.ink : '#fff',
+                      color: reveal === val ? '#fff' : colors.ink,
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {error && (
