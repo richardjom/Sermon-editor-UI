@@ -227,11 +227,12 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   // Actual render dispatchers (no modal). The "request" variants below
   // gate through the modal first; these are what runs after the user
   // confirms (or what runs directly for Trim).
-  async function dispatchRenderClip(clipId, startSec, endSec) {
+  async function dispatchRenderClip(clipId, startSec, endSec, emphasis) {
     setRenderingClipIds(prev => new Set(prev).add(clipId))
     try {
       await renderClip(clipId, {
         startSeconds: startSec, endSeconds: endSec,
+        ...(Array.isArray(emphasis) ? { emphasis } : {}),
       })
     } catch (e) {
       setRenderingClipIds(prev => {
@@ -306,14 +307,16 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   // sermon (so the saved defaults stay in sync), then dispatch the
   // pending render. The modal closes on success; on failure the
   // modal stays open and surfaces the error.
-  async function handleConfirmRender(optsPatch) {
+  async function handleConfirmRender(optsPatch, extra) {
     if (!pendingRender) return
     await handlePatchRenderOptions(optsPatch)
     const p = pendingRender
     setPendingRender(null)
     if (p.kind === 'clip') {
       // p.startSec / p.endSec are present only on the Trim path.
-      await dispatchRenderClip(p.clipId, p.startSec, p.endSec)
+      // extra.emphasis (serif_accent accent words) is per-clip, not a
+      // sermon-level render option, so it rides the render call directly.
+      await dispatchRenderClip(p.clipId, p.startSec, p.endSec, extra?.emphasis)
     } else if (p.kind === 'all') {
       await dispatchRenderAll()
     }
@@ -2268,6 +2271,10 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
   // Word animation: reveal (karaoke word-by-word, default) vs hold (whole
   // phrase static). initial.reveal === false → Hold; otherwise Reveal.
   const [reveal, setReveal] = useState(initial.reveal !== false)
+  // serif_accent accent/punch words (single-clip only). Space/comma
+  // separated; each rendered in the italic serif. Empty → use whatever
+  // Claude/the clip already has.
+  const [emphasisText, setEmphasisText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -2313,7 +2320,12 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
           ? (brandColor.startsWith('#') ? brandColor : `#${brandColor}`)
           : null
       }
-      await onConfirm(payload)
+      // serif_accent accent words ride the render call (per-clip), not the
+      // sermon-level render_options patch.
+      const emphasisArr = (captionTemplate === 'serif_accent' && !isAll)
+        ? emphasisText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
+        : null
+      await onConfirm(payload, (emphasisArr && emphasisArr.length) ? { emphasis: emphasisArr } : undefined)
       // Parent closes the modal on success.
     } catch (e) {
       setError(e?.message || String(e))
@@ -2500,6 +2512,30 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
                 ))}
               </div>
             </div>
+
+            {captionTemplate === 'serif_accent' && !isAll && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 13, color: colors.ink, fontFamily: FONTS.sans, marginBottom: 4 }}>
+                  Accent words
+                </div>
+                <div style={{ fontSize: 11.5, color: colors.dim, marginBottom: 8, lineHeight: 1.45 }}>
+                  The words to set in italic serif, space or comma separated. New sermons pick these automatically; set them here to accent an existing clip. Leave blank to keep what’s stored.
+                </div>
+                <input
+                  type="text"
+                  value={emphasisText}
+                  onChange={(e) => setEmphasisText(e.target.value)}
+                  placeholder="tempted, story, grace"
+                  disabled={submitting}
+                  style={{
+                    width: '100%', padding: '8px 10px', boxSizing: 'border-box',
+                    background: '#fff', border: `1px solid ${colors.line2}`,
+                    borderRadius: 6, fontSize: 13, fontFamily: FONTS.sans,
+                    color: colors.ink, outline: 'none',
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {error && (
