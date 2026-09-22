@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { Modal, FormGroup, Input, Select, Btn } from './ui.jsx'
-import { submitSermon, submitSermonVideo, presignUpload, uploadFileToR2 } from '../api.js'
+import { submitSermon, submitSermonVideo, presignUpload, uploadFileToR2, uploadFileViaBackend } from '../api.js'
 
 // Soft client-side size cap. Anything larger is almost certainly a
 // mistake (wrong file, raw camera capture) and would take ages on a
@@ -112,7 +112,23 @@ export function SubmitModal({ open, onClose, clients, onSubmitted }) {
       if (msg.includes('cancelled')) {
         setFileName('')
       } else {
-        setError(`Upload failed: ${msg}`)
+        // Direct browser→R2 upload failed (verified NOT a CORS/permissions
+        // issue — the bucket + PUT work; this is a transfer/size/environment
+        // failure). Fall back to streaming the file through our own backend,
+        // which sidesteps the direct PUT entirely.
+        try {
+          setUploadProgress(0)
+          const h2 = uploadFileViaBackend(file, {
+            onProgress: (p) => setUploadProgress(p),
+          })
+          uploadAbortRef.current = h2.abort
+          const res = await h2.done
+          setUrl(res.get_url)
+        } catch (e2) {
+          const msg2 = String(e2?.message || e2)
+          if (msg2.includes('cancelled')) setFileName('')
+          else setError(`Upload failed: ${msg2}`)
+        }
       }
     } finally {
       uploadAbortRef.current = null
