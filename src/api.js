@@ -319,9 +319,44 @@ export function uploadFileToR2(file, putUrl, { onProgress, contentType } = {}) {
       if (xhr.status >= 200 && xhr.status < 300) resolve()
       else reject(new Error(`R2 PUT failed: HTTP ${xhr.status} ${xhr.responseText?.slice(0, 200) || ''}`))
     }
-    xhr.onerror = () => reject(new Error('R2 PUT network error (check bucket CORS for PUT from this origin)'))
+    // Network-level failure (transfer dropped, host blocked, etc.). Tagged
+    // so the caller can fall back to the server-side upload path. NOT
+    // necessarily CORS — that used to be the assumption but is verified
+    // working; this fires for large-file/transfer/environment failures too.
+    xhr.onerror = () => {
+      const err = new Error('Direct upload failed (network/transfer error)')
+      err.code = 'direct_upload_failed'
+      reject(err)
+    }
     xhr.onabort = () => reject(new Error('Upload cancelled'))
     xhr.send(file)
+  })
+  return { done, abort: () => xhr.abort() }
+}
+
+// Server-side upload fallback: POST the file to our backend, which streams
+// it to R2. Use when the direct presigned PUT fails. Returns { get_url }
+// (usable as file_url), same shape the presign flow ends with. Abortable.
+export function uploadFileViaBackend(file, { onProgress } = {}) {
+  const xhr = new XMLHttpRequest()
+  const done = new Promise((resolve, reject) => {
+    xhr.open('POST', `${BASE}/uploads/file`, true)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)) }
+        catch { reject(new Error('Upload succeeded but response was unreadable')) }
+      } else {
+        reject(new Error(`Server upload failed: HTTP ${xhr.status} ${xhr.responseText?.slice(0, 200) || ''}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('Server upload network error (could not reach the app backend)'))
+    xhr.onabort = () => reject(new Error('Upload cancelled'))
+    const form = new FormData()
+    form.append('file', file, file.name)
+    xhr.send(form)
   })
   return { done, abort: () => xhr.abort() }
 }
