@@ -83,6 +83,8 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
   // 50=center, 100=right). Only ever sent when the user opts into 'manual'.
   const [framingMode, setFramingMode] = useState(saved?.framingMode ?? 'auto')
   const [framing, setFraming] = useState(saved?.framing ?? 50)
+  // Captions on/off. Off → render the clip with NO burned-in captions.
+  const [captionsOn, setCaptionsOn] = useState(saved?.captionsOn ?? true)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
 
@@ -127,25 +129,30 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
   async function apply() {
     setSubmitting(true); setErr('')
     try {
-      const payload = { captionPosition: Number(position) }
-      if (OUTLINE_PX[outline] !== null) payload.captionOutline = OUTLINE_PX[outline]
-      if (font) payload.captionFont = font
-      if (weight === 'bold') payload.captionBold = true
-      else if (weight === 'regular') payload.captionBold = false
-      if (casing === 'caps') payload.captionUppercase = true
-      else if (casing === 'natural') payload.captionUppercase = false
-      // Highlight: 'default' sends nothing (keeps template color); 'off' →
-      // "none" (no pop); presets/custom → hex.
-      if (highlight === 'off') payload.captionHighlight = 'none'
-      else if (highlight === 'custom') payload.captionHighlight = highlightColor
-      else if (highlight === 'white') payload.captionHighlight = '#FFFFFF'
-      else if (highlight === 'yellow') payload.captionHighlight = '#FFD400'
-      // The 9:16 / 16:9 toggle is authoritative for THIS clip's export.
+      const payload = {}
+      // The 9:16 / 16:9 toggle and framing affect the VIDEO, so they apply
+      // whether captions are on or off.
       payload.vertical = ratio === '9:16'
-      // Only override framing when the user opted into manual — otherwise the
-      // server keeps auto face-tracking untouched.
       if (ratio === '9:16' && framingMode === 'manual') payload.manualFrameX = Number(framing)
-      save(clip.id, { ratio, position, outline, font, weight, casing, highlight, highlightColor, framingMode, framing })
+      if (!captionsOn) {
+        // No captions at all — skip every caption style param.
+        payload.captionTemplate = 'none'
+      } else {
+        payload.captionPosition = Number(position)
+        if (OUTLINE_PX[outline] !== null) payload.captionOutline = OUTLINE_PX[outline]
+        if (font) payload.captionFont = font
+        if (weight === 'bold') payload.captionBold = true
+        else if (weight === 'regular') payload.captionBold = false
+        if (casing === 'caps') payload.captionUppercase = true
+        else if (casing === 'natural') payload.captionUppercase = false
+        // Highlight: 'default' sends nothing (keeps template color); 'off' →
+        // "none" (no pop); presets/custom → hex.
+        if (highlight === 'off') payload.captionHighlight = 'none'
+        else if (highlight === 'custom') payload.captionHighlight = highlightColor
+        else if (highlight === 'white') payload.captionHighlight = '#FFFFFF'
+        else if (highlight === 'yellow') payload.captionHighlight = '#FFD400'
+      }
+      save(clip.id, { ratio, position, outline, font, weight, casing, highlight, highlightColor, framingMode, framing, captionsOn })
       await onRender?.(clip.id, payload)
       onApplied?.(); onClose?.()
     } catch (e) {
@@ -190,19 +197,21 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
           ) : (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: 12 }}>No source preview</div>
           )}
-          <div style={{ position: 'absolute', left: '6%', right: '6%', bottom: `${position}%`, textAlign: 'center', pointerEvents: 'none' }}>
-            <span style={{
-              fontFamily: fontDef.css, fontWeight: previewWeight, fontSize, lineHeight: 1.15,
-              color: '#fff', textShadow, textTransform,
-              WebkitTextStroke: (outlinePx && outlinePx > 0) ? `${Math.max(1, Math.round(outlinePx * 0.6))}px #000` : undefined,
-            }}>
-              {previewWords.map((w, i) => (
-                <span key={i} style={{ color: i === 0 ? activeWordColor : '#fff' }}>
-                  {w}{i < previewWords.length - 1 ? ' ' : ''}
-                </span>
-              ))}
-            </span>
-          </div>
+          {captionsOn && (
+            <div style={{ position: 'absolute', left: '6%', right: '6%', bottom: `${position}%`, textAlign: 'center', pointerEvents: 'none' }}>
+              <span style={{
+                fontFamily: fontDef.css, fontWeight: previewWeight, fontSize, lineHeight: 1.15,
+                color: '#fff', textShadow, textTransform,
+                WebkitTextStroke: (outlinePx && outlinePx > 0) ? `${Math.max(1, Math.round(outlinePx * 0.6))}px #000` : undefined,
+              }}>
+                {previewWords.map((w, i) => (
+                  <span key={i} style={{ color: i === 0 ? activeWordColor : '#fff' }}>
+                    {w}{i < previewWords.length - 1 ? ' ' : ''}
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
           <button onClick={() => { const v = videoRef.current; if (v) { v.paused ? v.play() : v.pause() } }} style={{ ...btn, flex: 1 }}>Play / pause</button>
@@ -237,6 +246,11 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
             </div>
           )}
 
+          <label style={lbl}>Captions</label>
+          <Seg options={[['on', 'On'], ['off', 'No captions']]} value={captionsOn ? 'on' : 'off'} onChange={v => setCaptionsOn(v === 'on')} />
+
+          {captionsOn && (
+          <div style={{ marginTop: 14 }}>
           <label style={lbl}>Font</label>
           <select value={font} onChange={e => setFont(e.target.value)}
             style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', borderRadius: 7, border: '1px solid #d9d4c9', fontSize: 13, background: '#fff', color: '#2a2620' }}>
@@ -268,6 +282,8 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
           <div style={{ fontSize: 11, color: '#8a857c', marginTop: 6, lineHeight: 1.4 }}>
             The word being spoken pops to this color. “Off” makes every word one solid color (no yellow).
           </div>
+          </div>
+          )}
         </div>
 
         {err && <div style={{ marginTop: 12, fontSize: 12, color: '#b42318', background: '#fdeceb', padding: '8px 10px', borderRadius: 6 }}>{err}</div>}

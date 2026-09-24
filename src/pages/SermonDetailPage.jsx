@@ -245,10 +245,10 @@ export function SermonDetailPage({ sermonId, clientId, clients, onBack }) {
   // Caption editor render: re-render a clip with per-clip caption
   // position/outline overrides. Same tracking + poll as a normal render;
   // just threads the two extra optional params to the API.
-  async function dispatchCaptionRender(clipId, { captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical } = {}) {
+  async function dispatchCaptionRender(clipId, { captionTemplate, captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical } = {}) {
     setRenderingClipIds(prev => new Set(prev).add(clipId))
     try {
-      await renderClip(clipId, { captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical })
+      await renderClip(clipId, { captionTemplate, captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical })
     } catch (e) {
       setRenderingClipIds(prev => {
         const next = new Set(prev); next.delete(clipId); return next
@@ -2247,6 +2247,7 @@ const CAPTION_TEMPLATES_UI = [
   { value: 'serif_editorial',  label: 'Serif Editorial',         description: 'Calmer — serif font, smaller, soft gray inactive.' },
   { value: 'elegant_serif',    label: 'Elegant Serif — White',   description: 'Refined serif, natural casing, white, no outline. Worship / testimony vibe.' },
   { value: 'serif_accent',     label: 'Serif Accent',            description: 'Heavy sans with the clip\'s punch words set in Fraunces italic. Editorial social look.' },
+  { value: 'none',             label: 'No captions',             description: 'Export the clip with no burned-in captions at all.' },
 ]
 
 function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
