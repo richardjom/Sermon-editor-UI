@@ -61,12 +61,14 @@ export async function reprocessSermon(id) {
 //   - Trim → pass new in/out as start_seconds + end_seconds
 // Backend queues a background task and returns immediately; poll
 // GET /sermon/{sermon_id} for completion (rendered_video_url appears).
-export async function renderClip(clipId, { startSeconds, endSeconds, captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical } = {}) {
+export async function renderClip(clipId, { startSeconds, endSeconds, captionTemplate, captionPosition, captionOutline, captionFont, captionUppercase, captionBold, captionHighlight, manualFrameX, vertical } = {}) {
   const body = {}
   if (typeof startSeconds === 'number') body.start_seconds = startSeconds
   if (typeof endSeconds === 'number') body.end_seconds = endSeconds
   // Caption editor per-clip overrides. Omitted → backend uses the
   // sermon template/render_options exactly as before.
+  // "none" = render with no captions at all; any other value picks a template.
+  if (typeof captionTemplate === 'string' && captionTemplate) body.caption_template = captionTemplate
   if (typeof captionPosition === 'number') body.caption_position = captionPosition
   if (typeof captionOutline === 'number') body.caption_outline = captionOutline
   if (typeof captionFont === 'string' && captionFont) body.caption_font = captionFont
