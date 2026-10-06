@@ -1310,11 +1310,7 @@ function DetailsTab({ sermon }) {
         />
         <Field
           label="Lower-third"
-          value={
-            opts.crop_lower_third === true ? 'Cropped (forced)' :
-            opts.crop_lower_third === false ? 'Not cropped' :
-            opts.vertical ? 'Auto-detect' : '—'
-          }
+          value={opts.crop_lower_third === true ? 'Cropped' : 'Not cropped'}
         />
         <Field label="Captions" value="Karaoke (auto-burned)" />
         <Field
@@ -2259,9 +2255,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
   const [vertical, setVertical] = useState(!!initial.vertical)
   const [faceTracking, setFaceTracking] = useState(initial.face_tracking !== false)
   const [crop, setCrop] = useState(
-    initial.crop_lower_third === true ? 'on' :
-    initial.crop_lower_third === false ? 'off' :
-    'auto'
+    initial.crop_lower_third === true ? 'on' : 'off'  // default OFF (auto removed — it over-cropped)
   )
   const [captionTemplate, setCaptionTemplate] = useState(initial.caption_template || 'bold_yellow')
   const [brandColor, setBrandColor] = useState(initial.brand_color || '')
@@ -2303,7 +2297,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
       const payload = {
         vertical,
         face_tracking: faceTracking,
-        crop_lower_third: crop === 'auto' ? null : crop === 'on',
+        crop_lower_third: crop === 'on',
         caption_template: captionTemplate || 'bold_yellow',
         reveal,
       }
@@ -2388,16 +2382,15 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
                 Crop lower third
               </div>
               <div style={{ fontSize: 11.5, color: colors.dim, marginTop: 2, marginBottom: 8, lineHeight: 1.45 }}>
-                Drop the bottom 30% before reframing if the source has a banner/text overlay.
+                Off by default. Turn On only if the source has a lower-third banner/name bar you want cropped out — it tightens the zoom, so leave it Off otherwise.
               </div>
               <DetailSegmented
                 value={crop}
                 onChange={setCrop}
                 disabled={submitting}
                 options={[
-                  { value: 'auto', label: 'Auto' },
-                  { value: 'on', label: 'On' },
                   { value: 'off', label: 'Off' },
+                  { value: 'on', label: 'On' },
                 ]}
               />
             </div>
@@ -2610,8 +2603,6 @@ function summarizeRenderOptions(opts) {
   if (opts.vertical && opts.face_tracking !== false) out.push('AI face tracking')
   if (opts.vertical && opts.face_tracking === false) out.push('Static center crop')
   if (opts.crop_lower_third === true) out.push('Lower-third cropped')
-  else if (opts.crop_lower_third === false) out.push('Lower-third kept')
-  else if (opts.vertical) out.push('Lower-third auto-detect')
   return out.join(' · ')
 }
 
