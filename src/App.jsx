@@ -8,7 +8,7 @@ import { SermonDetailPage } from './pages/SermonDetailPage.jsx'
 import { useClients } from './useClients.js'
 import { globalStyles } from './components/ui.jsx'
 
-export default function App() {
+export default function App({ account }) {
   const { clients, addClient } = useClients()
   const [page, setPage] = useState('dashboard')
   const [currentClientId, setCurrentClientId] = useState(null)
@@ -56,6 +56,7 @@ export default function App() {
           currentClientId={currentClientId}
           onNavigate={navigate}
           onAddClient={handleAddClient}
+          account={account}
         />
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {page === 'dashboard' && (
