@@ -1,0 +1,10 @@
+node_modules/
+dist/
+
+# Local env files (Clerk keys etc.) — never commit
+.env
+.env.*
+!.env.example
+
+# Clerk CLI local link / claim files
+.clerk/

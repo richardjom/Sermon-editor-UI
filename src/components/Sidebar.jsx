@@ -4,7 +4,7 @@ const CLIENT_COLORS = [
   '#b5d4f4', '#9fe1cb', '#fac775', '#f4c0d1', '#c0dd97', '#f0997b',
 ]
 
-export function Sidebar({ clients, currentPage, currentClientId, onNavigate, onAddClient }) {
+export function Sidebar({ clients, currentPage, currentClientId, onNavigate, onAddClient, account }) {
   return (
     <aside style={styles.sidebar}>
       <div style={styles.logo}>
@@ -48,6 +48,7 @@ export function Sidebar({ clients, currentPage, currentClientId, onNavigate, onA
           </button>
         </div>
       </nav>
+      {account && <div style={styles.account}>{account}</div>}
     </aside>
   )
 }
@@ -127,6 +128,7 @@ const styles = {
   logoTitle: { fontSize: 14, fontWeight: 500, color: 'var(--text)' },
   logoSub: { fontSize: 11, color: 'var(--text-3)', marginTop: 1 },
   nav: { padding: '1rem 0.75rem', flex: 1, overflowY: 'auto' },
+  account: { padding: '0.75rem 1rem', borderTop: '1px solid var(--border)' },
   navSection: { marginBottom: '1.5rem' },
   sectionLabel: {
     fontSize: 10,

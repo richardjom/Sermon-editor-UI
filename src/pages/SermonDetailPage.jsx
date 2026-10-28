@@ -2,7 +2,14 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Icon } from '../components/Icon.jsx'
 import { Spinner, EmptyState } from '../components/ui.jsx'
 import { CaptionEditor } from '../components/CaptionEditor.jsx'
-import { getSermon, reprocessSermon, renderClip, regenerateCaption, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon, transcriptPdfUrl, clipsPdfUrl } from '../api.js'
+import { getSermon, reprocessSermon, renderClip, regenerateCaption, createCustomClip, renderAllClips, updateRenderOptions, updateDeadline, markDelivered, unmarkDelivered, deleteSermon, transcriptPdfUrl, clipsPdfUrl, downloadApiFile } from '../api.js'
+
+// Mirrors the backend's _safe_filename. The API is cross-origin and doesn't
+// expose Content-Disposition, so the download helper can't read the name.
+function pdfBaseName(title) {
+  const cleaned = (title || '').replace(/[^\p{L}\p{N} _-]/gu, '_').trim().replace(/ /g, '_')
+  return cleaned.slice(0, 80) || 'sermon'
+}
 
 /* ============================================================================
  * Sermon detail page — "Brief" design.
@@ -1505,14 +1512,14 @@ function RightColumn({
             </button>
           )}
           {/* PDF export buttons — backend builds and streams via
-              Content-Disposition: attachment, so a plain anchor with
-              `download` triggers the browser's Save dialog. We use <a>
-              (not <button> + window.location) so users can also
-              right-click → "Open in new tab" if they want to preview. */}
+              Content-Disposition: attachment. A plain anchor can't send
+              the sign-in token, so the click downloads through
+              downloadApiFile (fetch → blob). The href stays so the
+              buttons still look and behave like links. */}
           {sermonId && (sermon?.transcript || allClips.length > 0) && (
             <a
               href={transcriptPdfUrl(sermonId)}
-              download
+              onClick={e => { e.preventDefault(); downloadApiFile(transcriptPdfUrl(sermonId), `${pdfBaseName(sermon?.title)}_transcript.pdf`).catch(err => alert(err.message)) }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
                 background: colors.card, color: colors.ink,
@@ -1529,7 +1536,7 @@ function RightColumn({
           {sermonId && visibleClips.length > 0 && (
             <a
               href={clipsPdfUrl(sermonId, visibleClips.map(c => c.id))}
-              download
+              onClick={e => { e.preventDefault(); downloadApiFile(clipsPdfUrl(sermonId, visibleClips.map(c => c.id)), `${pdfBaseName(sermon?.title)}_clips.pdf`).catch(err => alert(err.message)) }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
                 background: colors.card, color: colors.ink,

@@ -1,10 +1,56 @@
 const BASE = 'https://sermon-editor-production.up.railway.app'
 
+// ---- Auth ---------------------------------------------------------------
+// Every call to our API carries the signed-in user's Clerk session token so
+// the backend knows who's asking (staff vs. which church). AuthGate sets the
+// getter once Clerk has a session; when Clerk isn't configured the getter
+// stays null and requests go out without a token, exactly as before.
+//
+// Only requests to BASE get the header — never presigned R2 URLs, which R2
+// would reject if they carried an unexpected Authorization header.
+let getAuthToken = null
+
+export function setAuthTokenGetter(fn) {
+  getAuthToken = fn
+}
+
+async function authHeaders() {
+  if (!getAuthToken) return {}
+  try {
+    const token = await getAuthToken()
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  } catch {
+    return {}
+  }
+}
+
+async function apiFetch(url, options = {}) {
+  return fetch(url, { ...options, headers: { ...(options.headers || {}), ...(await authHeaders()) } })
+}
+
+// Download a file from our API (e.g. a PDF) with the auth header attached.
+// A plain <a href> can't send headers, so fetch it, then save the blob.
+export async function downloadApiFile(url, fallbackName = 'download') {
+  const res = await apiFetch(url)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+  const name = match ? decodeURIComponent(match[1]) : fallbackName
+  const blobUrl = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
+}
+
 // Audio-only pipeline (legacy). Kept for backward compatibility.
 export async function submitSermon({ client_id, sermon_title, sermon_date, file_url, service_datetime }) {
   const body = { client_id, sermon_title, sermon_date, file_url }
   if (service_datetime) body.service_datetime = service_datetime
-  const res = await fetch(`${BASE}/process-sermon`, {
+  const res = await apiFetch(`${BASE}/process-sermon`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -29,7 +75,7 @@ export async function submitSermonVideo({
   const body = { client_id, sermon_title, sermon_date, file_url }
   if (render_options) body.render_options = render_options
   if (service_datetime) body.service_datetime = service_datetime
-  const res = await fetch(`${BASE}/process-sermon-video`, {
+  const res = await apiFetch(`${BASE}/process-sermon-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -39,19 +85,19 @@ export async function submitSermonVideo({
 }
 
 export async function getSermon(id) {
-  const res = await fetch(`${BASE}/sermon/${id}`)
+  const res = await apiFetch(`${BASE}/sermon/${id}`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 export async function getClientSermons(clientId) {
-  const res = await fetch(`${BASE}/clients/${clientId}/sermons`)
+  const res = await apiFetch(`${BASE}/clients/${clientId}/sermons`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 export async function reprocessSermon(id) {
-  const res = await fetch(`${BASE}/admin/reprocess/${id}`, { method: 'POST' })
+  const res = await apiFetch(`${BASE}/admin/reprocess/${id}`, { method: 'POST' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -80,7 +126,7 @@ export async function renderClip(clipId, { startSeconds, endSeconds, captionTemp
   if (typeof manualFrameX === 'number') body.manual_frame_x = manualFrameX
   // Per-clip export aspect (9:16 vs 16:9) from the caption editor toggle.
   if (typeof vertical === 'boolean') body.vertical = vertical
-  const res = await fetch(`${BASE}/clip/${clipId}/render`, {
+  const res = await apiFetch(`${BASE}/clip/${clipId}/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -93,7 +139,7 @@ export async function renderClip(clipId, { startSeconds, endSeconds, captionTemp
 // (hook line + takeaway + engagement ask + hashtags) instead of the
 // transcript-ish default. Runs synchronously and returns the new caption.
 export async function regenerateCaption(clipId) {
-  const res = await fetch(`${BASE}/clip/${clipId}/regenerate-caption`, {
+  const res = await apiFetch(`${BASE}/clip/${clipId}/regenerate-caption`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   })
@@ -120,7 +166,7 @@ export async function createCustomClip(sermonId, {
   if (whyItWorks) body.why_it_works = whyItWorks
   if (strength) body.strength = strength
   if (typeof render === 'boolean') body.render = render
-  const res = await fetch(`${BASE}/sermons/${sermonId}/clips`, {
+  const res = await apiFetch(`${BASE}/sermons/${sermonId}/clips`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -136,7 +182,7 @@ export async function createCustomClip(sermonId, {
 // Backend queues a single background task so concurrent ffmpeg
 // renders don't OOM Railway.
 export async function renderAllClips(sermonId, { onlyHigh = false } = {}) {
-  const res = await fetch(`${BASE}/sermons/${sermonId}/render-all`, {
+  const res = await apiFetch(`${BASE}/sermons/${sermonId}/render-all`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ only_high: onlyHigh }),
@@ -156,7 +202,7 @@ export async function renderAllClips(sermonId, { onlyHigh = false } = {}) {
 //   updateRenderOptions(id, { face_tracking: false })      // disable face tracking
 //   updateRenderOptions(id, { crop_lower_third: null })    // back to auto-detect
 export async function updateRenderOptions(sermonId, patch) {
-  const res = await fetch(`${BASE}/sermon/${sermonId}/render-options`, {
+  const res = await apiFetch(`${BASE}/sermon/${sermonId}/render-options`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch || {}),
@@ -177,7 +223,7 @@ export async function updateRenderOptions(sermonId, patch) {
 
 export async function listJobs({ active = true, limit = 100 } = {}) {
   const qs = new URLSearchParams({ active: String(active), limit: String(limit) })
-  const res = await fetch(`${BASE}/jobs?${qs}`)
+  const res = await apiFetch(`${BASE}/jobs?${qs}`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -191,19 +237,19 @@ export async function getDashboard({ active = true, jobsLimit = 200, workloadDay
     jobs_limit: String(jobsLimit),
     workload_days: String(workloadDays),
   })
-  const res = await fetch(`${BASE}/dashboard?${qs}`)
+  const res = await apiFetch(`${BASE}/dashboard?${qs}`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 export async function listClients() {
-  const res = await fetch(`${BASE}/clients`)
+  const res = await apiFetch(`${BASE}/clients`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 export async function updateClient(clientId, patch) {
-  const res = await fetch(`${BASE}/clients/${clientId}`, {
+  const res = await apiFetch(`${BASE}/clients/${clientId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch || {}),
@@ -213,13 +259,13 @@ export async function updateClient(clientId, patch) {
 }
 
 export async function clientsSummary() {
-  const res = await fetch(`${BASE}/clients/summary`)
+  const res = await apiFetch(`${BASE}/clients/summary`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 export async function workload({ days = 7 } = {}) {
-  const res = await fetch(`${BASE}/workload?days=${days}`)
+  const res = await apiFetch(`${BASE}/workload?days=${days}`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -227,7 +273,7 @@ export async function workload({ days = 7 } = {}) {
 export async function updateDeadline(sermonId, serviceDatetime) {
   // Pass null to clear, ISO string to reschedule.
   const body = { service_datetime: serviceDatetime }
-  const res = await fetch(`${BASE}/sermon/${sermonId}/deadline`, {
+  const res = await apiFetch(`${BASE}/sermon/${sermonId}/deadline`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -237,13 +283,13 @@ export async function updateDeadline(sermonId, serviceDatetime) {
 }
 
 export async function markDelivered(sermonId) {
-  const res = await fetch(`${BASE}/sermon/${sermonId}/mark-delivered`, { method: 'POST' })
+  const res = await apiFetch(`${BASE}/sermon/${sermonId}/mark-delivered`, { method: 'POST' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 export async function unmarkDelivered(sermonId) {
-  const res = await fetch(`${BASE}/sermon/${sermonId}/unmark-delivered`, { method: 'POST' })
+  const res = await apiFetch(`${BASE}/sermon/${sermonId}/unmark-delivered`, { method: 'POST' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -253,7 +299,7 @@ export async function unmarkDelivered(sermonId) {
 // pages are intentionally NOT touched; archive those manually if
 // needed.
 export async function deleteSermon(sermonId) {
-  const res = await fetch(`${BASE}/sermon/${sermonId}`, { method: 'DELETE' })
+  const res = await apiFetch(`${BASE}/sermon/${sermonId}`, { method: 'DELETE' })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`HTTP ${res.status}: ${text || 'delete failed'}`)
@@ -290,7 +336,7 @@ export function clipsPdfUrl(sermonId, clipIds) {
 // /uploads/presign endpoint for the backend side.
 
 export async function presignUpload({ filename, contentType }) {
-  const res = await fetch(`${BASE}/uploads/presign`, {
+  const res = await apiFetch(`${BASE}/uploads/presign`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename, content_type: contentType || 'video/mp4' }),
@@ -341,8 +387,10 @@ export function uploadFileToR2(file, putUrl, { onProgress, contentType } = {}) {
 // (usable as file_url), same shape the presign flow ends with. Abortable.
 export function uploadFileViaBackend(file, { onProgress } = {}) {
   const xhr = new XMLHttpRequest()
-  const done = new Promise((resolve, reject) => {
+  // XHR (not fetch) for upload progress, so attach the auth header by hand.
+  const done = authHeaders().then(headers => new Promise((resolve, reject) => {
     xhr.open('POST', `${BASE}/uploads/file`, true)
+    if (headers.Authorization) xhr.setRequestHeader('Authorization', headers.Authorization)
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
     }
@@ -359,6 +407,6 @@ export function uploadFileViaBackend(file, { onProgress } = {}) {
     const form = new FormData()
     form.append('file', file, file.name)
     xhr.send(form)
-  })
+  }))
   return { done, abort: () => xhr.abort() }
 }
