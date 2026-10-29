@@ -89,7 +89,7 @@ export function SermonRow({ sermon, onClick, onDelete }) {
             color: 'var(--text-3)',
             marginLeft: 4,
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.color = '#ef4444' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--ed-danger-soft)'; e.currentTarget.style.color = 'var(--ed-danger)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-3)' }}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">

@@ -46,25 +46,39 @@ function pdfBaseName(title) {
  *   - Multi-format chips (we currently render one format per clip)
  * ========================================================================== */
 
+// Theme tokens (src/index.css) so the page follows light / dark.
 const colors = {
-  bg: '#f6f3ec',
-  card: '#fbf9f3',
-  ink: '#1f1a14',
-  body: '#3a322a',
-  dim: '#867a6b',
-  muted: '#a89d8c',
-  line: 'rgba(40,30,20,.08)',
-  line2: 'rgba(40,30,20,.14)',
-  high: '#3e8c5a',
-  med: '#b08442',
-  fav: '#c97a4a',
-  surface: '#efeadf',
-  paper: '#f6f3ec',
+  bg: 'var(--ed-bg)',
+  card: 'var(--ed-surface)',
+  ink: 'var(--ed-text)',
+  body: 'var(--ed-soft)',
+  dim: 'var(--ed-muted)',
+  muted: 'var(--ed-faint)',
+  line: 'var(--ed-line)',
+  line2: 'var(--ed-line-2)',
+  high: 'var(--ed-ok)',
+  med: 'var(--ed-amber)',
+  fav: 'var(--ed-fav)',
+  surface: 'var(--ed-surface-2)',
+  paper: 'var(--ed-bg)',
+  // Text on an ink-filled control (selected chips, primary buttons).
+  onInk: 'var(--ed-surface)',
+  danger: 'var(--ed-danger)',
+  dangerSoft: 'var(--ed-danger-soft)',
+  dangerLine: 'var(--ed-danger-line)',
+  overlay: 'var(--ed-overlay)',
 }
 
+// Controls drawn on top of the video stay light-on-dark in both themes.
+const VIDEO_UI = { text: '#f3efe6', ink: '#1a1712' }
+
+// Translucent tint of any color, theme variables included.
+const tint = (c, pct) => `color-mix(in srgb, ${c} ${pct}%, transparent)`
+
 const FONTS = {
-  sans: '"Inter", system-ui, -apple-system, sans-serif',
-  serif: '"Fraunces", Georgia, serif',
+  sans: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif',
+  // Headlines used to be Fraunces; the new look is one sans family.
+  serif: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif',
   mono: '"Geist Mono", "DM Mono", "JetBrains Mono", monospace',
 }
 
@@ -475,7 +489,7 @@ function TopBar({ sermon, sermonId, onBack, onReprocess, onUpdateDeadline, onMar
       </button>
       <div style={{ minWidth: 0 }}>
         <div style={{
-          fontFamily: FONTS.serif, fontSize: 22, fontWeight: 500,
+          fontFamily: FONTS.serif, fontSize: 22, fontWeight: 800,
           color: colors.ink, letterSpacing: -0.2, lineHeight: 1,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '40vw',
         }}>
@@ -570,9 +584,9 @@ function TopBar({ sermon, sermonId, onBack, onReprocess, onUpdateDeadline, onMar
             transition: 'color 0.12s, background 0.12s, border-color 0.12s',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'
-            e.currentTarget.style.color = '#b8423b'
-            e.currentTarget.style.borderColor = 'rgba(184, 66, 59, 0.4)'
+            e.currentTarget.style.background = colors.dangerSoft
+            e.currentTarget.style.color = colors.danger
+            e.currentTarget.style.borderColor = colors.dangerLine
           }}
           onMouseLeave={e => {
             e.currentTarget.style.background = 'transparent'
@@ -632,7 +646,7 @@ function BriefDeadlinePopover({ currentISO, onClose, onSave }) {
         position: 'absolute', top: '100%', right: 0, marginTop: 6,
         zIndex: 50, background: colors.card,
         border: `1px solid ${colors.line2}`, borderRadius: 10,
-        boxShadow: '0 4px 16px rgba(20,16,10,0.08)',
+        boxShadow: 'var(--ed-shadow)',
         padding: 12, width: 240, fontFamily: FONTS.sans,
       }}
     >
@@ -650,14 +664,14 @@ function BriefDeadlinePopover({ currentISO, onClose, onSave }) {
         autoFocus
         style={{
           width: '100%', padding: '7px 9px', boxSizing: 'border-box',
-          background: '#fff', border: `1px solid ${colors.line2}`,
+          background: colors.card, border: `1px solid ${colors.line2}`,
           borderRadius: 6, fontSize: 13, fontFamily: FONTS.sans,
           color: colors.ink, outline: 'none',
         }}
       />
       {error && (
         <div style={{
-          fontSize: 11.5, color: '#8b2929', background: '#fbecec',
+          fontSize: 11.5, color: colors.danger, background: colors.dangerSoft,
           padding: '6px 8px', borderRadius: 6, marginTop: 8,
         }}>
           {error}
@@ -713,11 +727,11 @@ function BriefDeadlinePopover({ currentISO, onClose, onSave }) {
 function StatusPill({ status, delivered }) {
   const map = {
     completed: { c: colors.high, label: 'Completed' },
-    processing: { c: '#a07a26', label: 'Processing' },
-    failed: { c: '#a23b3b', label: 'Failed' },
+    processing: { c: colors.med, label: 'Processing' },
+    failed: { c: colors.danger, label: 'Failed' },
     pending: { c: colors.dim, label: 'Pending' },
-    analyzing: { c: '#a07a26', label: 'Analyzing' },
-    transcribing: { c: '#a07a26', label: 'Transcribing' },
+    analyzing: { c: colors.med, label: 'Analyzing' },
+    transcribing: { c: colors.med, label: 'Transcribing' },
   }
   // Delivered overrides everything else — the editor cares more about
   // "is this off my queue" than about whether each clip rendered.
@@ -727,7 +741,7 @@ function StatusPill({ status, delivered }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 6, padding: '5px 11px',
-      background: `${s.c}1a`, color: s.c, borderRadius: 999,
+      background: tint(s.c, 10), color: s.c, borderRadius: 999,
       fontSize: 11.5, fontWeight: 500, fontFamily: FONTS.sans,
     }}>
       <div style={{ width: 6, height: 6, borderRadius: 999, background: s.c }} />
@@ -760,14 +774,14 @@ function FailedState({ sermon, onReprocess }) {
   return (
     <div style={{ padding: '1.5rem 28px' }}>
       <div style={{
-        border: `1px solid #d8b6b6`, borderRadius: 10,
-        background: '#fbecec', padding: '1rem',
+        border: `1px solid ${colors.dangerLine}`, borderRadius: 10,
+        background: colors.dangerSoft, padding: '1rem',
       }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: '#8b2929', marginBottom: 6, fontFamily: FONTS.sans }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: colors.danger, marginBottom: 6, fontFamily: FONTS.sans }}>
           Processing failed
         </div>
         {sermon?.error_message && (
-          <div style={{ fontSize: 12, color: '#8b2929', fontFamily: FONTS.mono }}>
+          <div style={{ fontSize: 12, color: colors.danger, fontFamily: FONTS.mono }}>
             {sermon.error_message}
           </div>
         )}
@@ -1065,7 +1079,7 @@ function VideoPlayer({ sermon, clips, selectedClip, selectedId, playerRef, playT
           position: 'absolute', top: 12, left: 12, padding: '5px 10px',
           background: 'rgba(20,16,10,.65)', backdropFilter: 'blur(6px)',
           WebkitBackdropFilter: 'blur(6px)', borderRadius: 999,
-          fontSize: 11.5, color: colors.paper,
+          fontSize: 11.5, color: VIDEO_UI.text,
           display: 'flex', alignItems: 'center', gap: 6,
           fontFamily: FONTS.sans, maxWidth: '60%',
         }}>
@@ -1089,10 +1103,10 @@ function VideoPlayer({ sermon, clips, selectedClip, selectedId, playerRef, playT
       }}>
         <button onClick={togglePlay} style={{
           width: 32, height: 32, borderRadius: 999,
-          background: colors.paper, border: 'none', cursor: 'pointer',
+          background: VIDEO_UI.text, border: 'none', cursor: 'pointer',
           display: 'grid', placeItems: 'center', flexShrink: 0,
         }}>
-          <Icon name={playing ? 'pause' : 'play'} size={13} color={colors.ink} />
+          <Icon name={playing ? 'pause' : 'play'} size={13} color={VIDEO_UI.ink} />
         </button>
         <div style={{
           fontFamily: FONTS.mono, fontSize: 11, color: '#e8e2d6',
@@ -1111,7 +1125,7 @@ function VideoPlayer({ sermon, clips, selectedClip, selectedId, playerRef, playT
           {/* progress */}
           <div style={{
             position: 'absolute', left: 0, top: 0, bottom: 0,
-            width: `${pct}%`, background: colors.paper, borderRadius: 2,
+            width: `${pct}%`, background: VIDEO_UI.text, borderRadius: 2,
           }} />
           {/* clip markers */}
           {clips.map(c => (
@@ -1195,7 +1209,7 @@ function ClipMapStrip({ sermon, clips, selectedId, setSelectedId, playerRef }) {
                 position: 'absolute', left: `${left}%`, width: `${w}%`,
                 top: isSel ? 4 : 12, bottom: isSel ? 4 : 12,
                 background: col, border: 'none', borderRadius: 3, cursor: 'pointer',
-                boxShadow: isSel ? `0 0 0 3px ${col}33` : 'none',
+                boxShadow: isSel ? `0 0 0 3px ${tint(col, 20)}` : 'none',
                 transition: 'all .15s', padding: 0,
               }}
               aria-label={`Clip at ${fmtHMS(c.inSec)}: ${c.title}`}
@@ -1468,7 +1482,7 @@ function RightColumn({
       <div style={{ padding: '20px 22px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <h2 style={{
-            margin: 0, fontFamily: FONTS.serif, fontWeight: 500,
+            margin: 0, fontFamily: FONTS.serif, fontWeight: 800,
             fontSize: 22, color: colors.ink, letterSpacing: -0.2,
           }}>
             Clips
@@ -1763,8 +1777,8 @@ function ClipRow({ clip, sermon, sermonTitle, expanded, onToggle, onSelect, onPl
             <ScoreBadge accent={accent} score={clip.score} />
           </div>
           <div style={{
-            fontSize: 14, fontWeight: 500, color: colors.ink,
-            lineHeight: 1.35, fontFamily: FONTS.serif,
+            fontSize: 14, color: colors.ink,
+            lineHeight: 1.35, fontFamily: FONTS.serif, fontWeight: 700,
           }}>
             {clip.title}
           </div>
@@ -1800,13 +1814,13 @@ function ClipRow({ clip, sermon, sermonTitle, expanded, onToggle, onSelect, onPl
           {clip.render_error && !clip.rendered_video_url && !rendering && (
             <div style={{
               padding: '10px 12px', fontSize: 12, marginBottom: 10,
-              color: '#8b2929', background: '#fbecec', borderRadius: 6,
+              color: colors.danger, background: colors.dangerSoft, borderRadius: 6,
               fontFamily: FONTS.sans,
               display: 'flex', alignItems: 'flex-start', gap: 10,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, marginBottom: 3 }}>Render failed</div>
-                <div style={{ fontSize: 11.5, lineHeight: 1.45, color: '#8b2929', wordBreak: 'break-word' }}>
+                <div style={{ fontSize: 11.5, lineHeight: 1.45, color: colors.danger, wordBreak: 'break-word' }}>
                   {clip.render_error}
                 </div>
               </div>
@@ -2027,7 +2041,7 @@ function TrimModal({ clip, onClose, onConfirm }) {
     <div
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.4)',
+        position: 'fixed', inset: 0, background: colors.overlay,
         display: 'grid', placeItems: 'center', zIndex: 100,
       }}
     >
@@ -2059,7 +2073,7 @@ function TrimModal({ clip, onClose, onConfirm }) {
           </div>
           {error && (
             <div style={{
-              fontSize: 12, color: '#8b2929', background: '#fbecec',
+              fontSize: 12, color: colors.danger, background: colors.dangerSoft,
               padding: '8px 10px', borderRadius: 6, marginBottom: 12,
             }}>{error}</div>
           )}
@@ -2123,7 +2137,7 @@ function CustomClipModal({ sermon, onClose, onConfirm }) {
     <div
       onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.4)',
+        position: 'fixed', inset: 0, background: colors.overlay,
         display: 'grid', placeItems: 'center', zIndex: 100,
       }}
     >
@@ -2170,7 +2184,7 @@ function CustomClipModal({ sermon, onClose, onConfirm }) {
               placeholder="Auto-derived from first words if blank"
               style={{
                 width: '100%', padding: '8px 10px', boxSizing: 'border-box',
-                background: '#fff', border: `1px solid ${colors.line2}`,
+                background: colors.card, border: `1px solid ${colors.line2}`,
                 borderRadius: 6, fontSize: 13, fontFamily: FONTS.sans,
                 color: colors.ink, outline: 'none',
               }}
@@ -2190,7 +2204,7 @@ function CustomClipModal({ sermon, onClose, onConfirm }) {
           </label>
           {error && (
             <div style={{
-              fontSize: 12, color: '#8b2929', background: '#fbecec',
+              fontSize: 12, color: colors.danger, background: colors.dangerSoft,
               padding: '8px 10px', borderRadius: 6, marginBottom: 12,
             }}>{error}</div>
           )}
@@ -2225,7 +2239,7 @@ function TrimField({ label, value, onChange }) {
         placeholder="HH:MM:SS"
         style={{
           width: '100%', padding: '8px 10px', boxSizing: 'border-box',
-          background: '#fff', border: `1px solid ${colors.line2}`,
+          background: colors.card, border: `1px solid ${colors.line2}`,
           borderRadius: 6, fontSize: 13, fontFamily: FONTS.mono,
           color: colors.ink, outline: 'none',
         }}
@@ -2327,7 +2341,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
     <div
       onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.4)',
+        position: 'fixed', inset: 0, background: colors.overlay,
         display: 'grid', placeItems: 'center', zIndex: 100,
       }}
     >
@@ -2351,7 +2365,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
         <div style={{ padding: 18 }}>
           {clip?.title && (
             <div style={{
-              fontFamily: FONTS.serif, fontSize: 16, color: colors.ink,
+              fontFamily: FONTS.serif, fontSize: 16, fontWeight: 700, color: colors.ink,
               marginBottom: 10,
             }}>
               "{clip.title}"
@@ -2420,7 +2434,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
               disabled={submitting}
               style={{
                 width: '100%', padding: '8px 10px', boxSizing: 'border-box',
-                background: '#fff', border: `1px solid ${colors.line2}`,
+                background: colors.card, border: `1px solid ${colors.line2}`,
                 borderRadius: 6, fontSize: 13, fontFamily: FONTS.sans,
                 color: colors.ink, outline: 'none',
                 cursor: submitting ? 'wait' : 'pointer',
@@ -2455,7 +2469,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
                     disabled={submitting}
                     style={{
                       flex: 1, padding: '8px 10px', boxSizing: 'border-box',
-                      background: '#fff', border: `1px solid ${colors.line2}`,
+                      background: colors.card, border: `1px solid ${colors.line2}`,
                       borderRadius: 6, fontSize: 13, fontFamily: FONTS.mono,
                       color: colors.ink, outline: 'none',
                     }}
@@ -2492,8 +2506,8 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
                       flex: 1, padding: '8px 10px', borderRadius: 6, fontSize: 12.5,
                       fontFamily: FONTS.sans, cursor: submitting ? 'wait' : 'pointer',
                       border: `1px solid ${reveal === val ? colors.ink : colors.line2}`,
-                      background: reveal === val ? colors.ink : '#fff',
-                      color: reveal === val ? '#fff' : colors.ink,
+                      background: reveal === val ? colors.ink : colors.card,
+                      color: reveal === val ? colors.onInk : colors.ink,
                     }}
                   >
                     {label}
@@ -2505,7 +2519,7 @@ function RenderOptionsModal({ sermon, pending, onClose, onConfirm }) {
 
           {error && (
             <div style={{
-              fontSize: 12, color: '#8b2929', background: '#fbecec',
+              fontSize: 12, color: colors.danger, background: colors.dangerSoft,
               padding: '8px 10px', borderRadius: 6, marginTop: 14,
             }}>{error}</div>
           )}
@@ -2534,7 +2548,7 @@ function ScoreBadge({ accent, score }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
       padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 500,
-      background: `${accent}1f`, color: accent, fontFamily: FONTS.sans,
+      background: tint(accent, 12), color: accent, fontFamily: FONTS.sans,
     }}>
       <span style={{ width: 5, height: 5, borderRadius: 999, background: accent }} />
       {score}

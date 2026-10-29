@@ -4,32 +4,35 @@
 import React from 'react'
 
 export function Icon({ name, size = 16, color = 'currentColor', strokeWidth = 1.75 }) {
+  // The color goes through CSS (style.color → currentColor) rather than the
+  // stroke/fill attributes, so theme variables like var(--ed-text) work.
   const common = {
     width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
-    stroke: color, strokeWidth, strokeLinecap: 'round', strokeLinejoin: 'round',
+    stroke: 'currentColor', strokeWidth, strokeLinecap: 'round', strokeLinejoin: 'round',
+    style: { color, flex: 'none' },
   }
   switch (name) {
     case 'play':
-      return (<svg {...common}><path d="M6 4l14 8-14 8V4z" fill={color} stroke="none" /></svg>)
+      return (<svg {...common}><path d="M6 4l14 8-14 8V4z" fill="currentColor" stroke="none" /></svg>)
     case 'pause':
       return (
         <svg {...common}>
-          <rect x="6" y="4" width="4" height="16" fill={color} stroke="none" />
-          <rect x="14" y="4" width="4" height="16" fill={color} stroke="none" />
+          <rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none" />
+          <rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none" />
         </svg>
       )
     case 'skipB':
       return (
         <svg {...common}>
-          <path d="M19 5L9 12l10 7V5z" fill={color} stroke="none" />
-          <rect x="5" y="5" width="2" height="14" fill={color} stroke="none" />
+          <path d="M19 5L9 12l10 7V5z" fill="currentColor" stroke="none" />
+          <rect x="5" y="5" width="2" height="14" fill="currentColor" stroke="none" />
         </svg>
       )
     case 'skipF':
       return (
         <svg {...common}>
-          <path d="M5 5l10 7-10 7V5z" fill={color} stroke="none" />
-          <rect x="17" y="5" width="2" height="14" fill={color} stroke="none" />
+          <path d="M5 5l10 7-10 7V5z" fill="currentColor" stroke="none" />
+          <rect x="17" y="5" width="2" height="14" fill="currentColor" stroke="none" />
         </svg>
       )
     case 'search':
@@ -67,7 +70,7 @@ export function Icon({ name, size = 16, color = 'currentColor', strokeWidth = 1.
       )
     case 'starFill':
       return (
-        <svg {...common} fill={color} stroke="none">
+        <svg {...common} fill="currentColor" stroke="none">
           <path d="M12 3l2.7 5.7 6.3.9-4.5 4.4 1 6.3L12 17.3 6.5 20.3l1-6.3L3 9.6l6.3-.9L12 3z" />
         </svg>
       )
@@ -89,9 +92,9 @@ export function Icon({ name, size = 16, color = 'currentColor', strokeWidth = 1.
     case 'more':
       return (
         <svg {...common}>
-          <circle cx="5" cy="12" r="1.4" fill={color} />
-          <circle cx="12" cy="12" r="1.4" fill={color} />
-          <circle cx="19" cy="12" r="1.4" fill={color} />
+          <circle cx="5" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="19" cy="12" r="1.4" fill="currentColor" />
         </svg>
       )
     case 'chev':

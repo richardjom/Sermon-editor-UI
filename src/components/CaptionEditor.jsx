@@ -172,16 +172,16 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(20,18,15,0.55)', zIndex: 1000,
+      position: 'fixed', inset: 0, background: 'var(--ed-overlay)', zIndex: 1000,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: '#fff', borderRadius: 14, width: 'min(440px, 96vw)',
-        maxHeight: '94vh', overflowY: 'auto', boxShadow: '0 16px 48px rgba(0,0,0,0.28)',
+        background: 'var(--ed-surface)', color: 'var(--ed-text)', borderRadius: 14, width: 'min(440px, 96vw)',
+        maxHeight: '94vh', overflowY: 'auto', boxShadow: 'var(--ed-shadow-lg)',
         padding: 18, boxSizing: 'border-box',
       }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#2a2620' }}>Caption style</div>
-        <div style={{ fontSize: 12, color: '#8a857c', margin: '2px 0 14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ed-text)' }}>Caption style</div>
+        <div style={{ fontSize: 12, color: 'var(--ed-muted)', margin: '2px 0 14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {clip.suggested_hook || 'Clip'}
         </div>
 
@@ -232,14 +232,14 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
                   <input type="range" min="0" max="100" value={framing}
                     onChange={e => setFraming(Number(e.target.value))}
                     style={{ width: '100%', marginTop: 10 }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8a857c', marginTop: 2 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ed-muted)', marginTop: 2 }}>
                     <span>← Left</span>
                     <span>{framing === 50 ? 'Center' : `${framing}%`}</span>
                     <span>Right →</span>
                   </div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#8a857c', marginTop: 6, lineHeight: 1.4 }}>
+                <div style={{ fontSize: 11, color: 'var(--ed-muted)', marginTop: 6, lineHeight: 1.4 }}>
                   The render auto-follows the speaker (preview center-crops). Switch to Manual to place the crop yourself and preview it.
                 </div>
               )}
@@ -253,7 +253,7 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
           <div style={{ marginTop: 14 }}>
           <label style={lbl}>Font</label>
           <select value={font} onChange={e => setFont(e.target.value)}
-            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', borderRadius: 7, border: '1px solid #d9d4c9', fontSize: 13, background: '#fff', color: '#2a2620' }}>
+            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', borderRadius: 7, border: '1px solid var(--ed-line-2)', fontSize: 13, background: 'var(--ed-surface)', color: 'var(--ed-text)' }}>
             {FONTS.map(f => <option key={f.value || 'tpl'} value={f.value}>{f.label}</option>)}
           </select>
 
@@ -265,7 +265,7 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
 
           <label style={{ ...lbl, marginTop: 14 }}>Vertical position (higher ↑ / lower ↓)</label>
           <input type="range" min="2" max="80" value={position} onChange={e => setPosition(Number(e.target.value))} style={{ width: '100%' }} />
-          <div style={{ fontSize: 11, color: '#8a857c', marginTop: 2 }}>{position}% from bottom</div>
+          <div style={{ fontSize: 11, color: 'var(--ed-muted)', marginTop: 2 }}>{position}% from bottom</div>
 
           <label style={{ ...lbl, marginTop: 14 }}>Outline</label>
           <Seg options={[['default', 'Default'], ['none', 'None'], ['thin', 'Thin'], ['thick', 'Thick']]} value={outline} onChange={setOutline} />
@@ -275,18 +275,18 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
           {highlight === 'custom' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
               <input type="color" value={highlightColor} onChange={e => setHighlightColor(e.target.value)}
-                style={{ width: 44, height: 32, padding: 0, border: '1px solid #d9d4c9', borderRadius: 7, background: '#fff', cursor: 'pointer' }} />
-              <span style={{ fontSize: 12, color: '#5f5a51' }}>{String(highlightColor).toUpperCase()}</span>
+                style={{ width: 44, height: 32, padding: 0, border: '1px solid var(--ed-line-2)', borderRadius: 7, background: 'var(--ed-surface)', cursor: 'pointer' }} />
+              <span style={{ fontSize: 12, color: 'var(--ed-soft)' }}>{String(highlightColor).toUpperCase()}</span>
             </div>
           )}
-          <div style={{ fontSize: 11, color: '#8a857c', marginTop: 6, lineHeight: 1.4 }}>
+          <div style={{ fontSize: 11, color: 'var(--ed-muted)', marginTop: 6, lineHeight: 1.4 }}>
             The word being spoken pops to this color. “Off” makes every word one solid color (no yellow).
           </div>
           </div>
           )}
         </div>
 
-        {err && <div style={{ marginTop: 12, fontSize: 12, color: '#b42318', background: '#fdeceb', padding: '8px 10px', borderRadius: 6 }}>{err}</div>}
+        {err && <div style={{ marginTop: 12, fontSize: 12, color: 'var(--ed-danger)', background: 'var(--ed-danger-soft)', padding: '8px 10px', borderRadius: 6 }}>{err}</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
           <button onClick={onClose} disabled={submitting} style={{ ...btn, flex: 1 }}>Cancel</button>
@@ -294,7 +294,7 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
             {submitting ? 'Rendering…' : 'Apply & render'}
           </button>
         </div>
-        <div style={{ fontSize: 11, color: '#8a857c', marginTop: 8, lineHeight: 1.4 }}>
+        <div style={{ fontSize: 11, color: 'var(--ed-muted)', marginTop: 8, lineHeight: 1.4 }}>
           Live preview is an approximation; the server-burned text is the source of truth. Preview shows a sample phrase — real captions still play word-by-word.
         </div>
       </div>
@@ -304,7 +304,7 @@ export function CaptionEditor({ clip, sermon, onRender, onClose, onApplied }) {
 
 const btn = {
   padding: '8px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
-  background: '#fff', color: '#2a2620', border: '1px solid #d9d4c9', borderRadius: 7, fontFamily: 'inherit',
+  background: 'var(--ed-surface)', color: 'var(--ed-text)', border: '1px solid var(--ed-line-2)', borderRadius: 7, fontFamily: 'inherit',
 }
-const sel = { background: '#2a2620', color: '#fff', borderColor: '#2a2620' }
-const lbl = { fontSize: 12.5, color: '#5f5a51', marginBottom: 6, display: 'block', fontWeight: 500 }
+const sel = { background: 'var(--ed-accent)', color: 'var(--ed-on-accent)', borderColor: 'var(--ed-accent)' }
+const lbl = { fontSize: 12.5, color: 'var(--ed-soft)', marginBottom: 6, display: 'block', fontWeight: 500 }

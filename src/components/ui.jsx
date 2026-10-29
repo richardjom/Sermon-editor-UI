@@ -34,12 +34,12 @@ export function Btn({ children, primary, onClick, disabled, small, style }) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: small ? '5px 12px' : '8px 16px',
-        borderRadius: 8, fontSize: small ? 12 : 13, fontWeight: 500,
+        borderRadius: 10, fontSize: small ? 12 : 13, fontWeight: 700,
         border: primary ? 'none' : '1px solid var(--border-mid)',
         background: primary
-          ? hovered ? '#333' : 'var(--text)'
+          ? hovered ? 'var(--ed-accent-hover)' : 'var(--ed-accent)'
           : hovered ? 'var(--surface-2)' : 'var(--surface)',
-        color: primary ? '#fff' : 'var(--text)',
+        color: primary ? 'var(--ed-on-accent)' : 'var(--text)',
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
         transition: 'background 0.12s',
         ...style,
@@ -133,7 +133,7 @@ export function Modal({ open, title, onClose, children, footer }) {
   return (
     <div
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+        position: 'fixed', inset: 0, background: 'var(--ed-overlay)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 100,
       }}
