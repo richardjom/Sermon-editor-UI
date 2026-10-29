@@ -1,4 +1,5 @@
-const BASE = 'https://sermon-editor-production.up.railway.app'
+// VITE_API_BASE points a local build at a local backend; production uses Railway.
+const BASE = import.meta.env.VITE_API_BASE || 'https://sermon-editor-production.up.railway.app'
 
 // ---- Auth ---------------------------------------------------------------
 // Every call to our API carries the signed-in user's Clerk session token so
@@ -409,4 +410,45 @@ export function uploadFileViaBackend(file, { onProgress } = {}) {
     xhr.send(form)
   }))
   return { done, abort: () => xhr.abort() }
+}
+
+// ── Church portal ───────────────────────────────────────────────────────────
+// /me says who the API thinks we are (staff / church / member), which routes
+// the signed-in user to the producer dashboard or the church portal. The
+// /portal/* endpoints return only church-safe fields (see app/portal.py).
+
+export async function getMe() {
+  const res = await apiFetch(`${BASE}/me`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+// clientId only matters for staff previewing a church; a church member
+// always gets their own church.
+export async function getPortalSermons(clientId) {
+  const qs = clientId ? `?client_id=${encodeURIComponent(clientId)}` : ''
+  const res = await apiFetch(`${BASE}/portal/sermons${qs}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function getPortalSermon(sermonId) {
+  const res = await apiFetch(`${BASE}/portal/sermon/${sermonId}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+// status: 'approved' | 'changes' (note required) | 'none' (clear)
+export async function reviewClip(clipId, status, note) {
+  const res = await apiFetch(`${BASE}/portal/clip/${clipId}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, note }),
+  })
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`
+    try { msg = (await res.json()).detail || msg } catch {}
+    throw new Error(msg)
+  }
+  return res.json()
 }
