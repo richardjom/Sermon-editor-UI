@@ -7,6 +7,7 @@ import { SermonsPage, ClientPage } from './pages/SermonsPage.jsx'
 import { SermonDetailPage } from './pages/SermonDetailPage.jsx'
 import { useClients } from './useClients.js'
 import { globalStyles } from './components/ui.jsx'
+import { Portal } from './portal/Portal.jsx'
 
 export default function App({ account }) {
   const { clients, addClient } = useClients()
@@ -16,6 +17,8 @@ export default function App({ account }) {
   const [prevPage, setPrevPage] = useState(null)
   const [submitOpen, setSubmitOpen] = useState(false)
   const [addClientOpen, setAddClientOpen] = useState(false)
+  // Staff "Church view": show the portal exactly as that church sees it.
+  const [portalClientId, setPortalClientId] = useState(null)
 
   function navigate(p, id, clientId) {
     setPrevPage({ page, currentClientId, currentSermonId })
@@ -45,6 +48,16 @@ export default function App({ account }) {
   }
 
   const currentClient = clients.find(c => c.id === currentClientId)
+
+  if (portalClientId) {
+    return (
+      <Portal
+        previewClientId={portalClientId}
+        onExitPreview={() => setPortalClientId(null)}
+        account={account}
+      />
+    )
+  }
 
   return (
     <>
@@ -78,6 +91,7 @@ export default function App({ account }) {
               client={currentClient}
               onNavigate={navigate}
               onSubmit={() => setSubmitOpen(true)}
+              onPreviewPortal={() => setPortalClientId(currentClientId)}
             />
           )}
           {page === 'sermon-detail' && (

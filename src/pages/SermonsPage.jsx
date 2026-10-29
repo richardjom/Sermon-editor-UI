@@ -66,7 +66,7 @@ export function SermonsPage({ clients, onNavigate, onSubmit }) {
   )
 }
 
-export function ClientPage({ client, onNavigate, onSubmit }) {
+export function ClientPage({ client, onNavigate, onSubmit, onPreviewPortal }) {
   const [sermons, setSermons] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -103,7 +103,12 @@ export function ClientPage({ client, onNavigate, onSubmit }) {
       <Topbar
         title={client.name}
         sub={loading ? '' : `${sermons.length} sermon${sermons.length !== 1 ? 's' : ''}`}
-        action={<Btn primary onClick={onSubmit}>+ Submit sermon</Btn>}
+        action={
+          <div style={{ display: 'flex', gap: 8 }}>
+            {onPreviewPortal && <Btn onClick={onPreviewPortal}>Church view</Btn>}
+            <Btn primary onClick={onSubmit}>+ Submit sermon</Btn>
+          </div>
+        }
       />
       <div style={{ padding: '1.5rem' }}>
         <Card>
