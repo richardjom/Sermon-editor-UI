@@ -1,28 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 
 // ── Theme ───────────────────────────────────────────────────────────────────
-// Starts from the device's light/dark setting; the header toggle overrides it
-// and the choice is remembered on this device.
-const THEME_KEY = 'portal:theme'
-
-function initialTheme() {
-  try {
-    const saved = localStorage.getItem(THEME_KEY)
-    if (saved === 'light' || saved === 'dark') return saved
-  } catch {}
-  try {
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
-  } catch {}
-  return 'light'
-}
-
-export function usePortalTheme() {
-  const [theme, setTheme] = useState(initialTheme)
-  useEffect(() => {
-    try { localStorage.setItem(THEME_KEY, theme) } catch {}
-  }, [theme])
-  return [theme, () => setTheme(t => (t === 'dark' ? 'light' : 'dark'))]
-}
+// Shared with The Editor (src/theme.js): one light/dark choice for the app.
+export { useTheme as usePortalTheme } from '../theme.js'
 
 // ── Clip helpers ────────────────────────────────────────────────────────────
 // No review row = the church hasn't decided yet.

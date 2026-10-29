@@ -1,29 +1,102 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Theme. Every screen colors itself from these --ed-* tokens (the church
+   portal mirrors the same palette in portal/portal.css). <html data-theme>
+   is set by src/theme.js, before first paint by the snippet in index.html. */
+:root, :root[data-theme='light'] {
+  --ed-bg: #f6f6fb;
+  --ed-surface: #ffffff;
+  --ed-surface-2: #f3f3f8;
+  --ed-sunk: #ececf3;
+  --ed-hover: #f8f8fc;
+  --ed-line: #e7e7ef;
+  --ed-line-2: #d5d6e0;
+  --ed-text: #12131a;
+  --ed-soft: #3e4150;
+  --ed-muted: #5c5f6e;
+  --ed-faint: #727585;
+  --ed-accent: #5b3fd9;
+  --ed-accent-hover: #4a2fc4;
+  --ed-on-accent: #ffffff;
+  --ed-accent-soft: #f1edfe;
+  --ed-ok: #0b6b43;
+  --ed-ok-soft: #e7f6ee;
+  --ed-warn: #9a3d05;
+  --ed-warn-soft: #fff1e6;
+  --ed-amber: #8a5a00;
+  --ed-amber-soft: #fdf1d8;
+  --ed-info: #1d4fb8;
+  --ed-info-soft: #eaf2ff;
+  --ed-danger: #b42318;
+  --ed-danger-soft: #fdecec;
+  --ed-danger-line: #f3c1bd;
+  --ed-fav: #c2410c;
+  --ed-overlay: rgba(18, 19, 26, 0.45);
+  --ed-shadow: 0 4px 16px rgba(18, 19, 26, 0.08);
+  --ed-shadow-lg: 0 16px 48px rgba(18, 19, 26, 0.18);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --ed-bg: #0e0f12;
+  --ed-surface: #17181c;
+  --ed-surface-2: #1f2025;
+  --ed-sunk: #121317;
+  --ed-hover: #1c1d22;
+  --ed-line: #26272d;
+  --ed-line-2: #3a3b42;
+  --ed-text: #f3f3f5;
+  --ed-soft: #c9cbd3;
+  --ed-muted: #a3a6b0;
+  --ed-faint: #8a8d98;
+  --ed-accent: #a796ff;
+  --ed-accent-hover: #bcafff;
+  --ed-on-accent: #12131a;
+  --ed-accent-soft: #2a2342;
+  --ed-ok: #6ee7a5;
+  --ed-ok-soft: #12301f;
+  --ed-warn: #ffb547;
+  --ed-warn-soft: #33240f;
+  --ed-amber: #f5c15c;
+  --ed-amber-soft: #33280f;
+  --ed-info: #8ab4ff;
+  --ed-info-soft: #16233d;
+  --ed-danger: #ff8a80;
+  --ed-danger-soft: #3a1717;
+  --ed-danger-line: #5c2626;
+  --ed-fav: #fb923c;
+  --ed-overlay: rgba(0, 0, 0, 0.6);
+  --ed-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --ed-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+/* Older names used by ui.jsx, Sidebar, SubmitModal, SermonRow — mapped
+   onto the theme so they follow it. */
 :root {
-  --bg: #f7f6f3;
-  --surface: #ffffff;
-  --surface-2: #f2f1ee;
-  --border: rgba(0,0,0,0.09);
-  --border-mid: rgba(0,0,0,0.15);
-  --text: #1a1917;
-  --text-2: #6b6966;
-  --text-3: #a09d9a;
-  --accent: #1a1917;
-  --green-bg: #e8f5e0;
-  --green-text: #2d6e15;
-  --amber-bg: #fef3dc;
-  --amber-text: #7c4e0a;
-  --red-bg: #fdecea;
-  --red-text: #9b2b2b;
-  --blue-bg: #e8f0fd;
-  --blue-text: #1a4fbf;
-  --radius: 8px;
-  --radius-lg: 12px;
+  --bg: var(--ed-bg);
+  --surface: var(--ed-surface);
+  --surface-2: var(--ed-surface-2);
+  --border: var(--ed-line);
+  --border-mid: var(--ed-line-2);
+  --text: var(--ed-text);
+  --text-2: var(--ed-muted);
+  --text-3: var(--ed-faint);
+  --accent: var(--ed-accent);
+  --green-bg: var(--ed-ok-soft);
+  --green-text: var(--ed-ok);
+  --amber-bg: var(--ed-amber-soft);
+  --amber-text: var(--ed-amber);
+  --red-bg: var(--ed-danger-soft);
+  --red-text: var(--ed-danger);
+  --blue-bg: var(--ed-info-soft);
+  --blue-text: var(--ed-info);
+  --radius: 10px;
+  --radius-lg: 14px;
 }
 
 body {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-size: 14px;

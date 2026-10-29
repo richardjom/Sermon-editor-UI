@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTheme } from '../theme.js'
 
 const CLIENT_COLORS = [
   '#b5d4f4', '#9fe1cb', '#fac775', '#f4c0d1', '#c0dd97', '#f0997b',
@@ -48,7 +49,10 @@ export function Sidebar({ clients, currentPage, currentClientId, onNavigate, onA
           </button>
         </div>
       </nav>
-      {account && <div style={styles.account}>{account}</div>}
+      <div style={styles.account}>
+        <div style={{ minWidth: 0 }}>{account}</div>
+        <ThemeToggle />
+      </div>
     </aside>
   )
 }
@@ -128,7 +132,17 @@ const styles = {
   logoTitle: { fontSize: 14, fontWeight: 500, color: 'var(--text)' },
   logoSub: { fontSize: 11, color: 'var(--text-3)', marginTop: 1 },
   nav: { padding: '1rem 0.75rem', flex: 1, overflowY: 'auto' },
-  account: { padding: '0.75rem 1rem', borderTop: '1px solid var(--border)' },
+  account: {
+    padding: '0.75rem 1rem', borderTop: '1px solid var(--border)',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+  },
+  toggle: {
+    display: 'flex', alignItems: 'center', gap: 2, height: 34, padding: 2, flex: 'none',
+    border: '1px solid var(--ed-line-2)', borderRadius: 999, background: 'var(--ed-surface-2)', cursor: 'pointer',
+  },
+  knob: {
+    width: 28, height: 28, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
   navSection: { marginBottom: '1.5rem' },
   sectionLabel: {
     fontSize: 10,
@@ -173,4 +187,27 @@ const styles = {
     transition: 'color 0.12s',
   },
   plusIcon: { fontSize: 16, lineHeight: 1 },
+}
+
+// Light / dark switch (shared with the church portal; see src/theme.js).
+function ThemeToggle() {
+  const [theme, toggle] = useTheme()
+  const dark = theme === 'dark'
+  const label = dark ? 'Switch to light mode' : 'Switch to dark mode'
+  const on = { background: 'var(--ed-accent)', color: 'var(--ed-on-accent)' }
+  const off = { background: 'transparent', color: 'var(--ed-muted)' }
+  return (
+    <button type="button" onClick={toggle} aria-label={label} title={label} style={styles.toggle}>
+      <span style={{ ...styles.knob, ...(dark ? off : on) }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      </span>
+      <span style={{ ...styles.knob, ...(dark ? on : off) }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      </span>
+    </button>
+  )
 }

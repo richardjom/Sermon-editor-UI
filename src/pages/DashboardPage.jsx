@@ -17,10 +17,8 @@
  * for "what time is it" so deadline math is computed against server time,
  * not the user's clock (avoids skew on long-lived tabs).
  *
- * The palette here is the spec's cream/charcoal set — distinct from the
- * Brief palette on SermonDetailPage. Two visual identities are
- * intentional: the dashboard is operational, the detail page is
- * editorial. Don't merge them.
+ * Colors come from the shared light/dark theme tokens in src/index.css
+ * (same palette as the church portal).
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
@@ -31,31 +29,35 @@ import { getDashboard, updateDeadline, deleteSermon } from '../api.js'
  * Design tokens (spec section 8)
  * ========================================================================== */
 
+// Theme tokens (src/index.css) so the dashboard follows light / dark.
 const COLORS = {
-  bg: '#f6f4ef',
-  bgSoft: '#eeece5',
-  card: '#ffffff',
-  line: '#e7e3d8',
-  lineSoft: '#efece3',
-  ink: '#18181b',
-  ink2: '#3f3f46',
-  ink3: '#71717a',
-  ink4: '#a1a1aa',
+  bg: 'var(--ed-bg)',
+  bgSoft: 'var(--ed-surface-2)',
+  card: 'var(--ed-surface)',
+  line: 'var(--ed-line)',
+  lineSoft: 'var(--ed-line)',
+  ink: 'var(--ed-text)',
+  ink2: 'var(--ed-soft)',
+  ink3: 'var(--ed-muted)',
+  ink4: 'var(--ed-faint)',
   // status tint pairs — always bg+fg from the same row
-  mintBg: '#d8ecd9', mintFg: '#2c6a3a',
-  skyBg: '#d6e7f3',  skyFg: '#2d5b85',
-  amberBg: '#f4e3c4', amberFg: '#7a5418',
-  roseBg: '#f0d6d2',  roseFg: '#8a3f37',
-  hoverRow: '#fafaf6',
+  mintBg: 'var(--ed-ok-soft)', mintFg: 'var(--ed-ok)',
+  skyBg: 'var(--ed-info-soft)',  skyFg: 'var(--ed-info)',
+  amberBg: 'var(--ed-amber-soft)', amberFg: 'var(--ed-amber)',
+  roseBg: 'var(--ed-danger-soft)',  roseFg: 'var(--ed-danger)',
+  hoverRow: 'var(--ed-hover)',
   // Bar / stripe defaults
-  barTrack: '#bcb6a3',
-  barEmpty: '#eeece5',
-  todayBar: '#18181b',
+  barTrack: 'var(--ed-faint)',
+  barEmpty: 'var(--ed-surface-2)',
+  todayBar: 'var(--ed-accent)',
+  // Primary action (purple accent)
+  accent: 'var(--ed-accent)',
+  onAccent: 'var(--ed-on-accent)',
 }
 
 const FONTS = {
-  sans: '"Inter", system-ui, sans-serif',
-  mono: '"JetBrains Mono", "Geist Mono", monospace',
+  sans: '"Plus Jakarta Sans", system-ui, sans-serif',
+  mono: '"Geist Mono", "JetBrains Mono", monospace',
 }
 
 // Map dashboard stage → ASS pill style. Mirrors backend spec exactly.
@@ -143,7 +145,7 @@ function deadlineChip(serviceISO, now) {
 function chipColors(tone) {
   if (tone === 'urgent') return { bg: COLORS.roseBg, fg: COLORS.roseFg }
   if (tone === 'soon')   return { bg: COLORS.amberBg, fg: COLORS.amberFg }
-  return                       { bg: '#eeece5',     fg: COLORS.ink3 }
+  return                       { bg: COLORS.bgSoft,  fg: COLORS.ink3 }
 }
 
 function dynamicSubtitle(jobs, now) {
@@ -657,7 +659,7 @@ function WorkQueueRow({ job, now, isLast, onOpen, onDeadlineChanged, onDelete })
               opacity: hover ? 1 : 0,
               transition: 'opacity 0.12s, background 0.12s, color 0.12s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.color = '#ef4444' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--ed-danger-soft)'; e.currentTarget.style.color = 'var(--ed-danger)' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = COLORS.ink4 }}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -669,7 +671,7 @@ function WorkQueueRow({ job, now, isLast, onOpen, onDeadlineChanged, onDelete })
           <button
             onClick={onOpen}
             style={{
-              padding: '8px 16px', background: COLORS.ink, color: '#fff',
+              padding: '8px 16px', background: COLORS.accent, color: COLORS.onAccent,
               border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
               cursor: 'pointer', fontFamily: FONTS.sans,
             }}
@@ -892,8 +894,8 @@ function Avatar({ bg, fg, monogram }) {
   return (
     <div style={{
       width: 32, height: 32, borderRadius: 8,
-      background: bg || '#e7e3d8',
-      color: fg || '#3f3f46',
+      background: bg || COLORS.bgSoft,
+      color: fg || COLORS.ink2,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontWeight: 600, fontSize: 12, fontFamily: FONTS.sans,
       letterSpacing: 0.3, flexShrink: 0,
@@ -1010,7 +1012,7 @@ function DeadlinePopover({ sermonId, currentISO, onClose, onSaved }) {
         position: 'absolute', top: '100%', left: 0, marginTop: 6,
         zIndex: 50, background: COLORS.card,
         border: `1px solid ${COLORS.line}`, borderRadius: 10,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+        boxShadow: 'var(--ed-shadow)',
         padding: 12, width: 240, fontFamily: FONTS.sans,
       }}
     >
@@ -1076,7 +1078,7 @@ function DeadlinePopover({ sermonId, currentISO, onClose, onSaved }) {
           onClick={save}
           disabled={submitting}
           style={{
-            background: COLORS.ink, color: '#fff', border: 'none',
+            background: COLORS.accent, color: COLORS.onAccent, border: 'none',
             padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
             cursor: submitting ? 'wait' : 'pointer', fontFamily: FONTS.sans,
           }}
