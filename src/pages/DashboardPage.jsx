@@ -50,7 +50,7 @@ const COLORS = {
   barTrack: 'var(--ed-faint)',
   barEmpty: 'var(--ed-surface-2)',
   todayBar: 'var(--ed-accent)',
-  // Primary action (purple accent)
+  // Primary action (orange accent)
   accent: 'var(--ed-accent)',
   onAccent: 'var(--ed-on-accent)',
 }
