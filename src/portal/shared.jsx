@@ -25,7 +25,9 @@ export function fmtTime(sec) {
 }
 
 export function fmtDate(sermon) {
-  const raw = sermon?.service_datetime || sermon?.sermon_date
+  // sermon_date is when it was preached; service_datetime is the church's
+  // deadline for the clips, so it's only a fallback.
+  const raw = sermon?.sermon_date || sermon?.service_datetime
   if (!raw) return ''
   // A bare YYYY-MM-DD would parse as UTC midnight and show the previous
   // day in US time zones, so read it as a local date.

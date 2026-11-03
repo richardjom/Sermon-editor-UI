@@ -452,3 +452,19 @@ export async function reviewClip(clipId, status, note) {
   }
   return res.json()
 }
+
+// Replace a clip's post caption (the text pasted into the post, not the
+// captions burned into the video).
+export async function updateClipCaption(clipId, caption) {
+  const res = await apiFetch(`${BASE}/portal/clip/${clipId}/caption`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caption }),
+  })
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`
+    try { msg = (await res.json()).detail || msg } catch {}
+    throw new Error(msg)
+  }
+  return res.json()
+}

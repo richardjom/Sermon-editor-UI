@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { getPortalSermon, getPortalSermons, reviewClip } from '../api.js'
+import { getPortalSermon, getPortalSermons, reviewClip, updateClipCaption } from '../api.js'
 import { Library } from './Library.jsx'
 import { Studio } from './Studio.jsx'
 import { ThemeToggle, usePortalTheme } from './shared.jsx'
@@ -24,6 +24,9 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     getPortalSermons(previewClientId)
       .then(d => {
         if (cancelled) return
+        // Newest first, so the home screen opens on this week's sermon.
+        const when = x => x.sermon_date || x.service_datetime || ''
+        d = { ...d, sermons: [...d.sermons].sort((a, b) => when(b).localeCompare(when(a))) }
         setList(d)
         // Staff previews also list undelivered sermons; open on what the church sees.
         setSermonId((d.sermons.find(x => x.delivered) || d.sermons[0])?.sermon_id || null)
@@ -43,9 +46,25 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     return () => { cancelled = true }
   }, [sermonId])
 
+  // Keep the open sermon's counts in the sermon list current as clips are
+  // reviewed, so "Earlier sermons" is right after switching away.
+  useEffect(() => {
+    if (!sermon) return
+    const st = sermon.clips.map(c => c.review?.status)
+    setList(l => l && {
+      ...l,
+      sermons: l.sermons.map(x => (x.sermon_id !== sermon.sermon_id ? x : {
+        ...x,
+        clip_count: st.length,
+        approved_count: st.filter(v => v === 'approved').length,
+        changes_count: st.filter(v => v === 'changes').length,
+      })),
+    })
+  }, [sermon])
+
   // Opening a clip (or going back) starts at the top of the page.
   const view = clipId ? 'studio' : 'library'
-  useEffect(() => { window.scrollTo(0, 0) }, [view])
+  useEffect(() => { window.scrollTo(0, 0) }, [view, sermonId])
 
   // Saves a decision and updates the clip in place. Throws so the caller
   // can show the error next to the button that was pressed.
@@ -61,6 +80,12 @@ export function Portal({ previewClientId, onExitPreview, account }) {
       setBusyClipId(null)
     }
   }, [clipId])
+
+  // Saves an edited post caption. Throws so Studio can show the error.
+  const onCaption = useCallback(async (id, caption) => {
+    const res = await updateClipCaption(id, caption)
+    setSermon(s => s && { ...s, clips: s.clips.map(c => (c.clip_id === id ? { ...c, caption: res.caption } : c)) })
+  }, [])
 
   const client = list?.client
   const monogram = (client?.monogram && client.monogram !== '?')
@@ -89,7 +114,7 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     content = (
       <Studio
         sermon={sermon} clipId={clipId} onSelect={setClipId} onBack={() => setClipId(null)}
-        onReview={onReview} busy={!!busyClipId}
+        onReview={onReview} onCaption={onCaption} busy={!!busyClipId}
       />
     )
   } else {

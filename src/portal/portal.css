@@ -22,6 +22,7 @@
   --pt-info: #2948e8;
   --pt-info-soft: #eef1ff;
   --pt-track: #ececf3;
+  --pt-needs: #6b6b78;
   --pt-tab-on: #ffffff;
   --pt-shadow: 0 1px 2px rgba(18, 19, 26, 0.08);
   color-scheme: light;
@@ -47,14 +48,16 @@
   --pt-info: #b9c8ff;
   --pt-info-soft: #1c2238;
   --pt-track: #1f1f22;
+  --pt-needs: #6a6a74;
   --pt-tab-on: #2a2a2e;
   --pt-shadow: none;
   color-scheme: dark;
 }
 
-/* Status colors read on both backgrounds (dots, badges on video, timeline). */
+/* Status colors read on both backgrounds (dots, badges on video, timeline).
+   Needs review is a neutral gray (set per theme above) so the accent only
+   ever means "press this". */
 .pt-root {
-  --pt-needs: #f59e0b;
   --pt-approved: #22a565;
   --pt-changes: #6f8cff;
 
@@ -69,7 +72,7 @@
 .pt-root button, .pt-root input, .pt-root select, .pt-root textarea { font: inherit; color: inherit; }
 .pt-root a { color: inherit; }
 .pt-root :focus-visible { outline: 2px solid var(--pt-accent); outline-offset: 2px; }
-.pt-mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+.pt-num { font-variant-numeric: tabular-nums; }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 .pt-banner {
@@ -117,6 +120,7 @@
 .pt-btn-accent-outline { border-color: var(--pt-accent); color: var(--pt-accent); }
 .pt-btn-ok { border-color: var(--pt-ok-line); background: var(--pt-ok-soft); color: var(--pt-ok); }
 .pt-btn-ghost { border-color: transparent; background: transparent; color: var(--pt-muted); }
+.pt-btn-sm { height: 34px; padding: 0 10px; }
 .pt-btn-lg { height: 50px; font-size: 15px; border-radius: 12px; }
 .pt-icon-btn {
   width: 40px; height: 40px; flex: none; display: flex; align-items: center; justify-content: center;
@@ -126,39 +130,66 @@
 
 /* ── Library (home) ─────────────────────────────────────────────────────── */
 .pt-main { max-width: 1280px; margin: 0 auto; padding: 32px 28px 64px; display: flex; flex-direction: column; gap: 24px; }
-.pt-title-row { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px; }
-.pt-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.pt-title h1 { margin: 0; font-size: 30px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; }
-.pt-sub { margin: 6px 0 0; font-size: 14px; color: var(--pt-muted); }
-.pt-chip-accent { padding: 4px 10px; border-radius: 999px; background: var(--pt-accent-soft); color: var(--pt-accent); font-size: 12px; font-weight: 800; }
-.pt-row-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.pt-select {
-  height: 40px; padding: 0 10px; border: 1px solid var(--pt-line-2); border-radius: 10px;
-  background: var(--pt-surface); font-weight: 700; font-size: 13px; max-width: 260px;
-}
+.pt-section { display: flex; flex-direction: column; gap: 16px; }
+.pt-h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+.pt-sub { margin: 0; font-size: 14px; color: var(--pt-muted); }
 
-.pt-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-.pt-stat { display: flex; align-items: center; gap: 14px; padding: 18px; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 16px; }
-.pt-stat-icon { width: 44px; height: 44px; flex: none; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
-.pt-stat-label { display: block; font-size: 12px; color: var(--pt-muted); font-weight: 600; }
-.pt-stat-value { display: block; font-size: 22px; font-weight: 800; }
-.tone-accent { background: var(--pt-accent-soft); color: var(--pt-accent); }
-.tone-warn { background: var(--pt-warn-soft); color: var(--pt-warn); }
-.tone-ok { background: var(--pt-ok-soft); color: var(--pt-ok); }
-.tone-info { background: var(--pt-info-soft); color: var(--pt-info); }
+/* Hero: the sermon, where its review stands, and the strip of its clips. */
+.pt-hero {
+  display: flex; flex-direction: column; gap: 28px; padding: 32px;
+  background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 24px;
+}
+.pt-hero-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 24px; }
+.pt-hero-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 360px; }
+.pt-hero-date { margin: 0; font-size: 15px; font-weight: 600; color: var(--pt-soft); }
+.pt-hero h1 { margin: 0; font-size: 48px; line-height: 1.04; font-weight: 800; letter-spacing: -0.035em; text-wrap: balance; }
+.pt-hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.pt-progress-label { margin: 0; font-size: 15px; color: var(--pt-muted); }
+.pt-progress-label strong { color: var(--pt-text); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.pt-strip-wrap { display: flex; flex-direction: column; gap: 10px; }
+.pt-strip { position: relative; height: 52px; border-radius: 12px; background: var(--pt-track); }
+.pt-seg {
+  position: absolute; top: 6px; bottom: 6px; padding: 0; border: 0; border-radius: 7px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+  font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pt-seg { transition: transform 0.12s ease; }
+  .pt-seg:hover { transform: scaleY(1.12); }
+}
+.seg-needs { background: var(--pt-needs); color: #ffffff; }
+.seg-approved { background: var(--pt-approved); color: #062b17; }
+.seg-changes { background: var(--pt-changes); color: #0d1640; }
+.pt-strip-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--pt-muted); }
+.pt-strip-legend { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; font-weight: 600; color: var(--pt-soft); }
+.pt-strip-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Earlier sermons */
+.pt-sermon-list { display: flex; flex-direction: column; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 16px; overflow: hidden; }
+.pt-sermon-row {
+  display: flex; align-items: center; gap: 16px; width: 100%; min-height: 60px; padding: 14px 20px; text-align: left;
+  border: 0; border-top: 1px solid var(--pt-line); background: transparent; cursor: pointer; color: var(--pt-muted);
+}
+.pt-sermon-row:first-child { border-top: 0; }
+.pt-sermon-row:hover { background: var(--pt-surface-2); }
+.pt-sermon-date { width: 110px; flex: none; font-size: 13px; font-weight: 600; }
+.pt-sermon-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; color: var(--pt-text); }
+.pt-sermon-meta { font-size: 13px; }
 
 .pt-toolbar {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
   padding: 12px; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 14px;
 }
 .pt-search {
-  flex: 1 1 260px; max-width: 380px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px;
+  flex: 0 1 320px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px;
   border-radius: 10px; background: var(--pt-surface-2); color: var(--pt-muted);
 }
 .pt-search input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 13px; color: var(--pt-text); outline: none; }
 .pt-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--pt-surface-2); flex-wrap: wrap; }
 .pt-tab { height: 34px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: var(--pt-muted); font-weight: 700; font-size: 13px; cursor: pointer; }
 .pt-tab[aria-pressed='true'] { background: var(--pt-tab-on); color: var(--pt-text); box-shadow: var(--pt-shadow); }
+.pt-tab-count { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: 0.7; }
 
 .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
 .pt-card { display: flex; flex-direction: column; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 18px; overflow: hidden; }
@@ -173,11 +204,11 @@
 .pt-pill { position: absolute; padding: 4px 9px; border-radius: 7px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 11px; font-weight: 700; }
 .pt-badge { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; }
 .pt-tile .pt-badge { position: absolute; top: 12px; right: 12px; }
-.badge-needs { background: #ffb547; color: #3a2400; }
+.badge-needs { background: rgba(255, 255, 255, 0.92); color: #12131a; }
 .badge-approved { background: #34c77b; color: #062b17; }
 .badge-changes { background: #c9d4ff; color: #14205c; }
 .pt-card-body { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 16px; flex: 1; }
-.pt-card-meta { font-size: 12px; font-weight: 700; color: var(--pt-accent); }
+.pt-card-meta { font-size: 12px; font-weight: 600; color: var(--pt-muted); }
 .pt-card h3 { margin: 0; font-size: 15px; line-height: 1.3; font-weight: 800; }
 .pt-quote { margin: 0; font-size: 13px; line-height: 1.45; font-style: italic; color: var(--pt-muted); }
 .pt-tags { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -230,7 +261,9 @@
 .pt-player-nav { display: flex; align-items: center; gap: 12px; }
 .pt-clip-title { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 800; text-align: center; max-width: 560px; }
 .pt-caption { margin: 0; font-size: 14px; line-height: 1.55; color: var(--pt-soft); white-space: pre-wrap; }
-.pt-hashtags { margin: 0; font-size: 13px; font-weight: 600; color: var(--pt-accent); }
+.pt-hashtags { margin: 0; font-size: 13px; font-weight: 600; color: var(--pt-muted); }
+.pt-textarea.pt-caption-input { min-height: 200px; }
+.pt-count { align-self: flex-end; font-size: 12px; color: var(--pt-muted); }
 .pt-msg { margin: 0; padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; font-weight: 600; }
 .pt-msg-ok { background: var(--pt-ok-soft); color: var(--pt-ok); }
 .pt-msg-info { background: var(--pt-info-soft); color: var(--pt-info); }
@@ -246,7 +279,7 @@
 .pt-timeline { position: relative; height: 56px; border-radius: 10px; background: var(--pt-track); }
 .pt-marker { position: absolute; top: 8px; bottom: 8px; min-width: 14px; padding: 0; border-radius: 6px; border: 2px solid transparent; cursor: pointer; }
 .pt-marker[aria-current='true'] { border-color: var(--pt-text); }
-.pt-playhead { position: absolute; top: -6px; bottom: -6px; width: 2px; border-radius: 2px; background: #e5484d; pointer-events: none; }
+.pt-playhead { position: absolute; top: -6px; bottom: -6px; width: 2px; border-radius: 2px; background: var(--pt-text); pointer-events: none; }
 .pt-ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--pt-muted); }
 
 .pt-center { min-height: 60vh; display: flex; align-items: center; justify-content: center; }
@@ -255,19 +288,30 @@
 @media (max-width: 960px) {
   .pt-header { padding: 12px 16px; }
   .pt-main { padding: 20px 16px 48px; }
-  .pt-title h1 { font-size: 24px; }
+  .pt-hero { padding: 20px; gap: 20px; border-radius: 20px; }
+  .pt-hero h1 { font-size: 34px; }
+  .pt-hero-actions { align-items: flex-start; }
   .pt-studio-cols { flex-direction: column; align-items: stretch; }
   .pt-col-list, .pt-col-preview, .pt-col-side { flex: none; width: 100%; }
   .pt-col-preview { order: 1; }
   .pt-col-side { order: 2; }
   .pt-col-list { order: 3; }
   .pt-player video { height: min(62vh, 560px); }
-  .pt-search { max-width: none; }
+  .pt-search { flex: 1 1 100%; }
 }
 @media (max-width: 560px) {
-  .pt-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .pt-stat { padding: 12px; gap: 10px; }
-  .pt-stat-icon { width: 36px; height: 36px; }
+  .pt-hero h1 { font-size: 30px; }
+  .pt-hero-actions .pt-inline > .pt-btn { flex: 1 1 auto; }
+  .pt-seg span { display: none; }
+  .pt-strip-foot { flex-wrap: wrap; }
+  .pt-strip-legend { order: 3; flex-basis: 100%; justify-content: flex-start; gap: 6px 14px; }
+  .pt-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .pt-tab { flex: none; }
+  .pt-sermon-row { flex-wrap: wrap; gap: 4px 12px; padding: 12px 16px; }
+  .pt-sermon-row svg { display: none; }
+  .pt-sermon-date { width: auto; }
+  .pt-sermon-title { flex-basis: 100%; order: 2; }
+  .pt-sermon-meta { order: 3; }
   .pt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .pt-card-body { padding: 10px 12px 12px; }
   .pt-quote, .pt-tags { display: none; }
