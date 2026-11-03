@@ -14,6 +14,7 @@ export function Portal({ previewClientId, onExitPreview, account }) {
   const [sermonId, setSermonId] = useState(null)
   const [sermon, setSermon] = useState(null)
   const [clipId, setClipId] = useState(null) // set → Studio, null → Library
+  const [requestClipId, setRequestClipId] = useState(null) // opened via "Request change"
   const [error, setError] = useState(null)
   const [busyClipId, setBusyClipId] = useState(null)
 
@@ -113,7 +114,8 @@ export function Portal({ previewClientId, onExitPreview, account }) {
   } else if (clipId && sermon.clips.some(c => c.clip_id === clipId)) {
     content = (
       <Studio
-        sermon={sermon} clipId={clipId} onSelect={setClipId} onBack={() => setClipId(null)}
+        sermon={sermon} clipId={clipId} requestClipId={requestClipId}
+        onSelect={id => { setRequestClipId(null); setClipId(id) }} onBack={() => setClipId(null)}
         onReview={onReview} onCaption={onCaption} busy={!!busyClipId}
       />
     )
@@ -121,7 +123,8 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     content = (
       <Library
         sermons={list.sermons} sermon={sermon} onPickSermon={setSermonId}
-        onOpenClip={setClipId} onReview={onReview} busyClipId={busyClipId}
+        onOpenClip={(id, opts) => { setRequestClipId(opts?.request ? id : null); setClipId(id) }}
+        onReview={onReview} busyClipId={busyClipId}
       />
     )
   }

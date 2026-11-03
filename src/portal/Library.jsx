@@ -1,28 +1,20 @@
 import React, { useMemo, useState } from 'react'
 import { downloadApiFile, transcriptPdfUrl } from '../api.js'
-import { PIcon, STATUS_LABEL, clipStatus, fmtDate, fmtTime, sermonName } from './shared.jsx'
-
-const TABS = [
-  { id: 'all', label: 'All' },
-  { id: 'needs', label: 'Needs review' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'changes', label: 'Being updated' },
-]
+import { PIcon, clipStatus, fmtDate, fmtTime, sermonName } from './shared.jsx'
 
 // How many other sermons show before "Show all".
 const OTHERS_LIMIT = 5
-const VIEW_KEY = 'portal-view'
 
-function readView() {
-  try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid' } catch { return 'grid' }
+const BADGE = {
+  needs: 'Needs your review',
+  approved: 'Approved',
+  changes: 'Being updated',
 }
 
-// Home: the picked sermon (this week's by default) with its clips as a grid
-// of thumbnails or a list, then the church's other sermons.
+// Home: the picked sermon (this week's by default), its clips as cards with
+// the review actions right on them, the rest of the package, then the
+// church's other sermons.
 export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, busyClipId }) {
-  const [tab, setTab] = useState('all')
-  const [query, setQuery] = useState('')
-  const [view, setView] = useState(readView)
   const [approvingAll, setApprovingAll] = useState(false)
 
   const clips = sermon.clips
@@ -31,18 +23,6 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
     clips.forEach(x => { c[clipStatus(x)]++ })
     return c
   }, [clips])
-
-  const shown = clips.filter(c => {
-    if (tab !== 'all' && clipStatus(c) !== tab) return false
-    if (!query.trim()) return true
-    const q = query.trim().toLowerCase()
-    return [c.title, c.hook, c.caption].some(t => (t || '').toLowerCase().includes(q))
-  })
-
-  function pickView(v) {
-    setView(v)
-    try { localStorage.setItem(VIEW_KEY, v) } catch {}
-  }
 
   async function approveAll() {
     setApprovingAll(true)
@@ -61,48 +41,64 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
     downloadApiFile(transcriptPdfUrl(sermon.sermon_id), 'transcript.pdf').catch(e => alert(e.message))
   }
 
+  // Every clip's post copy in one text file, ready to paste.
+  function downloadCaptions() {
+    const text = clips
+      .filter(c => c.caption)
+      .map(c => `${c.number}. ${c.title}\n\n${c.caption}`)
+      .join('\n\n---\n\n')
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${sermonName(sermon)} captions.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const name = sermonName(sermon)
   const date = fmtDate(sermon, true)
-  const minutes = sermon.duration_seconds ? Math.round(sermon.duration_seconds / 60) : null
-  const meta = [
-    date !== name ? date : null,
-    minutes ? `${minutes}-minute message` : null,
-    `${clips.length} clip${clips.length !== 1 ? 's' : ''}`,
-  ].filter(Boolean).join(', ')
-  const firstToReview = clips.find(c => clipStatus(c) === 'needs') || clips[0]
-  const others = sermons.filter(s => s.sermon_id !== sermon.sermon_id)
   const isNewest = sermons[0]?.sermon_id === sermon.sermon_id
+  const eyebrow = [isNewest ? 'This week' : null, date !== name ? date : null].filter(Boolean).join(', ')
+  const minutes = sermon.duration_seconds ? Math.round(sermon.duration_seconds / 60) : null
+  const meta = [minutes ? `${minutes}-minute message` : null, `${clips.length} clip${clips.length !== 1 ? 's' : ''} ready`]
+    .filter(Boolean).join(', ')
+  const firstToReview = clips.find(c => clipStatus(c) === 'needs')
+  const hasCaptions = clips.some(c => c.caption)
+  const others = sermons.filter(s => s.sermon_id !== sermon.sermon_id)
 
   return (
     <main className="pt-main">
-      <section className="pt-head" aria-labelledby="pt-sermon-title">
-        <div className="pt-head-text">
+      <section className="pt-week" aria-labelledby="pt-sermon-title">
+        <div className="pt-week-text">
+          {eyebrow && <p className="pt-week-eyebrow">{eyebrow}</p>}
           <h1 id="pt-sermon-title">{name}</h1>
           <p className="pt-sub">{meta}</p>
-          {clips.length > 0 && (
-            <div className="pt-progress">
-              <div className="pt-progress-track" aria-hidden="true">
-                <div style={{ width: `${(counts.approved / counts.all) * 100}%` }} />
-              </div>
-              <span><strong className="pt-num">{counts.approved} of {counts.all}</strong> approved</span>
-            </div>
-          )}
         </div>
         {clips.length > 0 && (
-          <div className="pt-head-actions">
-            <button type="button" className="pt-btn pt-btn-primary" onClick={() => onOpenClip(firstToReview.clip_id)}>
-              <PIcon name="play" size={12} /> {counts.needs ? 'Review clips' : 'Watch clips'}
-            </button>
-            {counts.needs > 0 && (
-              <button type="button" className="pt-btn" onClick={approveAll} disabled={approvingAll}>
-                {approvingAll ? 'Approving…' : `Approve all ${counts.needs}`}
-              </button>
-            )}
-            {sermon.has_transcript && (
-              <button type="button" className="pt-btn pt-btn-ghost" onClick={downloadTranscript}>
-                <PIcon name="doc" /> Transcript
-              </button>
-            )}
+          <div className="pt-week-review">
+            <div className="pt-week-count">
+              <strong className="pt-num">{counts.approved} of {counts.all} approved</strong>
+              <span>{counts.needs ? `${counts.needs} need${counts.needs === 1 ? 's' : ''} your review` : 'All set'}</span>
+            </div>
+            <div className="pt-progress-track" aria-hidden="true">
+              <div style={{ width: `${(counts.approved / counts.all) * 100}%` }} />
+            </div>
+            <div className="pt-week-actions">
+              {firstToReview ? (
+                <>
+                  <button type="button" className="pt-btn pt-btn-primary pt-btn-lg" onClick={approveAll} disabled={approvingAll}>
+                    <PIcon name="check" strokeWidth={2.5} /> {approvingAll ? 'Approving…' : 'Approve all remaining'}
+                  </button>
+                  <button type="button" className="pt-btn pt-btn-lg" onClick={() => onOpenClip(firstToReview.clip_id)}>
+                    <PIcon name="play" size={12} /> Review one by one
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="pt-btn pt-btn-lg" onClick={() => onOpenClip(clips[0].clip_id)}>
+                  <PIcon name="play" size={12} /> Watch clips
+                </button>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -113,55 +109,47 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
           <p>This sermon’s clips are still being finished. They’ll show up here when they’re ready.</p>
         </div>
       ) : (
-        <section className="pt-section" aria-label="Clips">
-          <div className="pt-toolbar">
-            <div className="pt-tabs" role="group" aria-label="Filter by review status">
-              {TABS.map(t => (
-                <button
-                  key={t.id} type="button" className="pt-tab"
-                  aria-pressed={tab === t.id} onClick={() => setTab(t.id)}
-                >
-                  {t.label} <span className="pt-tab-count">{counts[t.id]}</span>
-                </button>
-              ))}
-            </div>
-            <div className="pt-toolbar-right">
-              <label className="pt-search">
-                <PIcon name="search" />
-                <input
-                  type="search"
-                  aria-label="Search clips"
-                  placeholder="Search clips"
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                />
-              </label>
-              <div className="pt-viewswitch" role="group" aria-label="Layout">
-                <button type="button" aria-pressed={view === 'grid'} aria-label="Grid" title="Grid" onClick={() => pickView('grid')}>
-                  <PIcon name="grid" />
-                </button>
-                <button type="button" aria-pressed={view === 'list'} aria-label="List" title="List" onClick={() => pickView('list')}>
-                  <PIcon name="list" />
-                </button>
-              </div>
-            </div>
+        <section className="pt-section" aria-labelledby="pt-clips">
+          <div className="pt-section-head">
+            <h2 id="pt-clips" className="pt-h2">Your clips</h2>
+            <p className="pt-sub">Open a clip to watch it, copy its caption, or ask for a change.</p>
           </div>
+          <div className="pt-cards">
+            {clips.map(c => (
+              <ClipCard
+                key={c.clip_id} clip={c} busy={busyClipId === c.clip_id}
+                onOpen={() => onOpenClip(c.clip_id)}
+                onRequest={() => onOpenClip(c.clip_id, { request: true })}
+                onReview={onReview}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
-          {shown.length === 0 ? (
-            <div className="pt-empty"><p>No clips match. Try another word or switch to All.</p></div>
-          ) : view === 'grid' ? (
-            <div className="pt-sheet">
-              {shown.map(c => (
-                <SheetItem key={c.clip_id} clip={c} busy={busyClipId === c.clip_id} onOpen={() => onOpenClip(c.clip_id)} onReview={onReview} />
-              ))}
-            </div>
-          ) : (
-            <div className="pt-cliplist">
-              {shown.map(c => (
-                <ListRow key={c.clip_id} clip={c} busy={busyClipId === c.clip_id} onOpen={() => onOpenClip(c.clip_id)} onReview={onReview} />
-              ))}
-            </div>
-          )}
+      {(sermon.has_transcript || hasCaptions) && (
+        <section className="pt-section" aria-labelledby="pt-package">
+          <h2 id="pt-package" className="pt-h2">Also in this package</h2>
+          <div className="pt-extras">
+            {sermon.has_transcript && (
+              <button type="button" className="pt-extra" onClick={downloadTranscript}>
+                <span className="pt-extra-icon"><PIcon name="doc" size={20} /></span>
+                <span>
+                  <span className="pt-extra-title">Sermon transcript</span>
+                  <span className="pt-extra-sub">PDF of the full message, word for word</span>
+                </span>
+              </button>
+            )}
+            {hasCaptions && (
+              <button type="button" className="pt-extra" onClick={downloadCaptions}>
+                <span className="pt-extra-icon"><PIcon name="copy" size={20} /></span>
+                <span>
+                  <span className="pt-extra-title">Captions and hashtags</span>
+                  <span className="pt-extra-sub">Post copy for every clip, ready to paste</span>
+                </span>
+              </button>
+            )}
+          </div>
         </section>
       )}
 
@@ -174,66 +162,40 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
   )
 }
 
-// A still from inside the clip; #t= skips the black first frame.
-function Thumb({ clip }) {
-  return <video src={`${clip.video_url}#t=0.8`} preload="metadata" muted playsInline tabIndex={-1} aria-hidden="true" />
-}
-
-// Approve / undo in one button: a round check on thumbnails, or labeled in
-// the list. Clips being updated have no toggle.
-function ApproveToggle({ clip, busy, onReview, labeled = false, className = '' }) {
-  const status = clipStatus(clip)
-  if (status === 'changes') return null
-  const approved = status === 'approved'
-  return (
-    <button
-      type="button" className={`pt-approve ${labeled ? 'pt-approve-labeled' : ''} ${approved ? 'is-on' : ''} ${className}`}
-      disabled={busy} aria-pressed={approved}
-      aria-label={approved ? `Approved. Undo approval of ${clip.title}` : `Approve ${clip.title}`}
-      title={approved ? 'Approved. Click to undo' : 'Approve'}
-      onClick={() => onReview(clip.clip_id, approved ? 'none' : 'approved')}
-    >
-      <PIcon name="check" size={14} strokeWidth={2.75} />
-      {labeled && (approved ? 'Approved' : 'Approve')}
-    </button>
-  )
-}
-
-function SheetItem({ clip, busy, onOpen, onReview }) {
+function ClipCard({ clip, busy, onOpen, onRequest, onReview }) {
   const status = clipStatus(clip)
   return (
-    <article className="pt-sheet-item">
-      <div className="pt-sheet-thumb">
-        <button type="button" className="pt-thumb-open" onClick={onOpen} aria-label={`Watch clip ${clip.number}: ${clip.title}`}>
-          <Thumb clip={clip} />
-          <span className="pt-pill">{fmtTime(clip.duration_seconds)}</span>
-          {status === 'changes' && <span className="pt-badge badge-changes">Being updated</span>}
-        </button>
-        <ApproveToggle clip={clip} busy={busy} onReview={onReview} className="pt-approve-float" />
-      </div>
-      <h3><span className="pt-sheet-num">{clip.number}</span>{clip.title}</h3>
-    </article>
-  )
-}
-
-function ListRow({ clip, busy, onOpen, onReview }) {
-  const status = clipStatus(clip)
-  return (
-    <article className="pt-cliprow">
-      <button type="button" className="pt-cliprow-thumb" onClick={onOpen} aria-label={`Watch clip ${clip.number}: ${clip.title}`}>
-        <Thumb clip={clip} />
+    <article className="pt-card">
+      <button type="button" className="pt-tile" onClick={onOpen} aria-label={`Watch clip ${clip.number}: ${clip.title}`}>
+        {/* #t= shows a frame from inside the clip instead of a black first frame. */}
+        <video src={`${clip.video_url}#t=0.8`} preload="metadata" muted playsInline tabIndex={-1} />
+        <span className="pt-pill">{fmtTime(clip.duration_seconds)}</span>
+        <span className="pt-tile-play"><PIcon name="play" size={20} /></span>
       </button>
-      <button type="button" className="pt-cliprow-text" onClick={onOpen}>
-        <span className="pt-cliprow-title">{clip.number}. {clip.title}</span>
-        {clip.hook && clip.hook !== clip.title && <span className="pt-cliprow-quote">“{clip.hook}”</span>}
-        <span className="pt-cliprow-meta pt-num">Starts at {fmtTime(clip.start_seconds)}, {fmtTime(clip.duration_seconds)} long</span>
-      </button>
-      <div className="pt-cliprow-actions">
-        {status === 'changes' && <span className="pt-chip chip-changes">{STATUS_LABEL.changes}</span>}
-        <ApproveToggle clip={clip} busy={busy} onReview={onReview} labeled />
-        <a className="pt-icon-btn" href={clip.download_url} download aria-label={`Download clip ${clip.number}`} title="Download">
-          <PIcon name="download" />
-        </a>
+      <div className="pt-card-body">
+        <span className={`pt-status status-${status}`}>{BADGE[status]}</span>
+        <h3>{clip.title}</h3>
+        {status === 'needs' && (
+          <div className="pt-card-actions">
+            <button type="button" className="pt-btn pt-btn-approve" disabled={busy} onClick={() => onReview(clip.clip_id, 'approved')}>
+              <PIcon name="check" strokeWidth={2.5} /> Approve
+            </button>
+            <button type="button" className="pt-btn" onClick={onRequest}>Request change</button>
+          </div>
+        )}
+        {status === 'approved' && (
+          <div className="pt-card-actions">
+            <a className="pt-btn" href={clip.download_url} download>
+              <PIcon name="download" /> Download
+            </a>
+            <button type="button" className="pt-btn pt-btn-ghost pt-btn-undo" disabled={busy} onClick={() => onReview(clip.clip_id, 'none')}>
+              Undo
+            </button>
+          </div>
+        )}
+        {status === 'changes' && (
+          <p className="pt-card-note">We’re updating this clip. The new version will show up here when it’s ready.</p>
+        )}
       </div>
     </article>
   )

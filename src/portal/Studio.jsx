@@ -6,7 +6,7 @@ import { PIcon, STATUS_LABEL, captionWithoutTags, clipStatus, fmtTime, hashtags 
 // Instagram's limit; the backend rejects anything longer.
 const MAX_CAPTION = 2200
 
-export function Studio({ sermon, clipId, onSelect, onBack, onReview, onCaption, busy }) {
+export function Studio({ sermon, clipId, requestClipId, onSelect, onBack, onReview, onCaption, busy }) {
   const clips = sermon.clips
   const index = Math.max(0, clips.findIndex(c => c.clip_id === clipId))
   const clip = clips[index]
@@ -23,9 +23,10 @@ export function Studio({ sermon, clipId, onSelect, onBack, onReview, onCaption, 
   const [saving, setSaving] = useState(false)
   const [captionError, setCaptionError] = useState(null)
 
-  // Fresh form for each clip.
+  // Fresh form for each clip; open on the change form when the church came
+  // here from a card's "Request change".
   useEffect(() => {
-    setRequesting(false)
+    setRequesting(clipId === requestClipId)
     setNote('')
     setError(null)
     setCopied(false)
