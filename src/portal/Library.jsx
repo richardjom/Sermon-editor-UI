@@ -39,6 +39,8 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
       for (const c of clips.filter(x => clipStatus(x) === 'needs')) {
         await onReview(c.clip_id, 'approved')
       }
+    } catch {
+      // onReview already told the user what went wrong.
     } finally {
       setApprovingAll(false)
     }
@@ -50,14 +52,15 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
 
   const firstToReview = clips.find(c => clipStatus(c) === 'needs') || clips[0]
   const minutes = sermon.duration_seconds ? Math.round(sermon.duration_seconds / 60) : null
-  const earlier = sermons.filter(s => s.sermon_id !== sermon.sermon_id)
+  const others = sermons.filter(s => s.sermon_id !== sermon.sermon_id)
+  const isNewest = sermons[0]?.sermon_id === sermon.sermon_id
 
   return (
     <main className="pt-main">
       <section className="pt-hero" aria-labelledby="pt-sermon-title">
         <div className="pt-hero-head">
           <div className="pt-hero-text">
-            <p className="pt-hero-date">{fmtDate(sermon) || 'Sermon'}</p>
+            {fmtDate(sermon) && <p className="pt-hero-date">{fmtDate(sermon)}</p>}
             <h1 id="pt-sermon-title">{sermon.title || 'Untitled sermon'}</h1>
             <p className="pt-sub">
               {minutes ? `${minutes}-minute message, ` : ''}{clips.length} clip{clips.length !== 1 ? 's' : ''}
@@ -138,7 +141,9 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
         </section>
       )}
 
-      {earlier.length > 0 && <EarlierSermons sermons={earlier} onPick={onPickSermon} />}
+      {others.length > 0 && (
+        <OtherSermons title={isNewest ? 'Earlier sermons' : 'Other sermons'} sermons={others} onPick={onPickSermon} />
+      )}
 
       <footer className="pt-footer"><span>Powered by</span><strong>Sunday Cues</strong></footer>
     </main>
@@ -182,12 +187,12 @@ function SermonStrip({ sermon, counts, onOpenClip }) {
   )
 }
 
-function EarlierSermons({ sermons, onPick }) {
+function OtherSermons({ title, sermons, onPick }) {
   const [all, setAll] = useState(false)
   const list = all ? sermons : sermons.slice(0, EARLIER_LIMIT)
   return (
     <section className="pt-section" aria-labelledby="pt-earlier">
-      <h2 id="pt-earlier" className="pt-h2">Earlier sermons</h2>
+      <h2 id="pt-earlier" className="pt-h2">{title}</h2>
       <div className="pt-sermon-list">
         {list.map(s => (
           <button key={s.sermon_id} type="button" className="pt-sermon-row" onClick={() => onPick(s.sermon_id)}>

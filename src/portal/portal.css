@@ -149,9 +149,11 @@
   position: absolute; top: 6px; bottom: 6px; padding: 0; border: 0; border-radius: 7px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; overflow: hidden;
   font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums;
-  transition: transform 0.12s ease;
 }
-.pt-seg:hover { transform: scaleY(1.12); }
+@media (prefers-reduced-motion: no-preference) {
+  .pt-seg { transition: transform 0.12s ease; }
+  .pt-seg:hover { transform: scaleY(1.12); }
+}
 .seg-needs { background: var(--pt-needs); color: #3a2400; }
 .seg-approved { background: var(--pt-approved); color: #062b17; }
 .seg-changes { background: var(--pt-changes); color: #0d1640; }

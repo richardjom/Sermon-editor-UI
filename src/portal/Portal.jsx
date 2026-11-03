@@ -25,7 +25,7 @@ export function Portal({ previewClientId, onExitPreview, account }) {
       .then(d => {
         if (cancelled) return
         // Newest first, so the home screen opens on this week's sermon.
-        const when = x => x.service_datetime || x.sermon_date || ''
+        const when = x => x.sermon_date || x.service_datetime || ''
         d = { ...d, sermons: [...d.sermons].sort((a, b) => when(b).localeCompare(when(a))) }
         setList(d)
         // Staff previews also list undelivered sermons; open on what the church sees.
