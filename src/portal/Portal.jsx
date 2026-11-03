@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { getPortalSermon, getPortalSermons, reviewClip, updateClipCaption } from '../api.js'
 import { Library } from './Library.jsx'
 import { Studio } from './Studio.jsx'
-import { ThemeToggle, usePortalTheme } from './shared.jsx'
+import { ThemeToggle, sermonDate, usePortalTheme } from './shared.jsx'
 import './portal.css'
 
 // The church-facing app. A church member sees their own church; staff pass
@@ -25,8 +25,8 @@ export function Portal({ previewClientId, onExitPreview, account }) {
       .then(d => {
         if (cancelled) return
         // Newest first, so the home screen opens on this week's sermon.
-        const when = x => x.sermon_date || x.service_datetime || ''
-        d = { ...d, sermons: [...d.sermons].sort((a, b) => when(b).localeCompare(when(a))) }
+        const when = x => sermonDate(x)?.getTime() || 0
+        d = { ...d, sermons: [...d.sermons].sort((a, b) => when(b) - when(a)) }
         setList(d)
         // Staff previews also list undelivered sermons; open on what the church sees.
         setSermonId((d.sermons.find(x => x.delivered) || d.sermons[0])?.sermon_id || null)
