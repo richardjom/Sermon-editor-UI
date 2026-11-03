@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { getPortalSermon, getPortalSermons, reviewClip } from '../api.js'
+import { getPortalSermon, getPortalSermons, reviewClip, updateClipCaption } from '../api.js'
 import { Library } from './Library.jsx'
 import { Studio } from './Studio.jsx'
 import { ThemeToggle, usePortalTheme } from './shared.jsx'
@@ -81,6 +81,12 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     }
   }, [clipId])
 
+  // Saves an edited post caption. Throws so Studio can show the error.
+  const onCaption = useCallback(async (id, caption) => {
+    const res = await updateClipCaption(id, caption)
+    setSermon(s => s && { ...s, clips: s.clips.map(c => (c.clip_id === id ? { ...c, caption: res.caption } : c)) })
+  }, [])
+
   const client = list?.client
   const monogram = (client?.monogram && client.monogram !== '?')
     ? client.monogram
@@ -108,7 +114,7 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     content = (
       <Studio
         sermon={sermon} clipId={clipId} onSelect={setClipId} onBack={() => setClipId(null)}
-        onReview={onReview} busy={!!busyClipId}
+        onReview={onReview} onCaption={onCaption} busy={!!busyClipId}
       />
     )
   } else {

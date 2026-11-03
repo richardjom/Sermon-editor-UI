@@ -3,7 +3,10 @@ import { PIcon, STATUS_LABEL, captionWithoutTags, clipStatus, fmtTime, hashtags 
 
 // One clip at a time: list on the left, player in the middle, caption +
 // download + review on the right, and where each clip sits in the sermon.
-export function Studio({ sermon, clipId, onSelect, onBack, onReview, busy }) {
+// Instagram's limit; the backend rejects anything longer.
+const MAX_CAPTION = 2200
+
+export function Studio({ sermon, clipId, onSelect, onBack, onReview, onCaption, busy }) {
   const clips = sermon.clips
   const index = Math.max(0, clips.findIndex(c => c.clip_id === clipId))
   const clip = clips[index]
@@ -15,6 +18,10 @@ export function Studio({ sermon, clipId, onSelect, onBack, onReview, busy }) {
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
   const [landscape, setLandscape] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [captionError, setCaptionError] = useState(null)
 
   // Fresh form for each clip.
   useEffect(() => {
@@ -22,6 +29,8 @@ export function Studio({ sermon, clipId, onSelect, onBack, onReview, busy }) {
     setNote('')
     setError(null)
     setCopied(false)
+    setEditing(false)
+    setCaptionError(null)
   }, [clipId])
 
   const go = i => onSelect(clips[Math.min(Math.max(i, 0), clips.length - 1)].clip_id)
@@ -60,6 +69,31 @@ export function Studio({ sermon, clipId, onSelect, onBack, onReview, busy }) {
       setCopied(true)
     } catch {
       setError('Could not copy. Select the caption text and copy it instead.')
+    }
+  }
+
+  function startEdit() {
+    setDraft(clip.caption || '')
+    setCaptionError(null)
+    setEditing(true)
+  }
+
+  async function saveCaption(e) {
+    e.preventDefault()
+    if (!draft.trim()) {
+      setCaptionError('Write a caption, or cancel to keep the current one.')
+      return
+    }
+    setSaving(true)
+    setCaptionError(null)
+    try {
+      await onCaption(clip.clip_id, draft.trim())
+      setEditing(false)
+      setCopied(false)
+    } catch (err) {
+      setCaptionError(err.message || 'Could not save the caption. Try again.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -174,14 +208,41 @@ export function Studio({ sermon, clipId, onSelect, onBack, onReview, busy }) {
           <section className="pt-panel">
             <div className="pt-panel-head">
               <h2>Post caption</h2>
-              {clip.caption && (
-                <button type="button" className="pt-btn" style={{ height: 34 }} onClick={copyCaption}>
-                  <PIcon name="copy" size={14} /> {copied ? 'Copied' : 'Copy'}
-                </button>
+              {!editing && (
+                <div className="pt-inline" style={{ gap: 6 }}>
+                  <button type="button" className="pt-btn pt-btn-sm" onClick={startEdit}>
+                    <PIcon name="edit" size={14} /> {clip.caption ? 'Edit' : 'Write one'}
+                  </button>
+                  {clip.caption && (
+                    <button type="button" className="pt-btn pt-btn-sm" onClick={copyCaption}>
+                      <PIcon name="copy" size={14} /> {copied ? 'Copied' : 'Copy'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
-            <p className="pt-caption">{body || 'No caption for this clip.'}</p>
-            {tags.length > 0 && <p className="pt-hashtags">{tags.join(' ')}</p>}
+            {editing ? (
+              <form className="pt-stack" onSubmit={saveCaption}>
+                <label className="pt-label" htmlFor="pt-caption-edit">Caption and hashtags</label>
+                <textarea
+                  id="pt-caption-edit" className="pt-textarea pt-caption-input" autoFocus
+                  maxLength={MAX_CAPTION} value={draft} onChange={e => setDraft(e.target.value)}
+                />
+                <span className="pt-count pt-num">{draft.length.toLocaleString()} / {MAX_CAPTION.toLocaleString()}</span>
+                {captionError && <p className="pt-msg pt-msg-error" role="alert">{captionError}</p>}
+                <div className="pt-inline">
+                  <button type="submit" className="pt-btn pt-btn-primary" disabled={saving}>
+                    {saving ? 'Saving…' : 'Save caption'}
+                  </button>
+                  <button type="button" className="pt-btn pt-btn-ghost" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <p className="pt-caption">{body || 'No caption yet. Write one to copy into your post.'}</p>
+                {tags.length > 0 && <p className="pt-hashtags">{tags.join(' ')}</p>}
+              </>
+            )}
           </section>
 
           <section className="pt-panel">
