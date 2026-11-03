@@ -14,11 +14,12 @@ const OTHERS_LIMIT = 5
 const VIEW_KEY = 'portal-view'
 
 function readView() {
-  try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid' } catch { return 'grid' }
+  // The review list is the default; the grid is one click away.
+  try { return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'list' } catch { return 'list' }
 }
 
-// Home: the picked sermon (this week's by default) with its clips as a grid
-// of thumbnails or a list, then the church's other sermons.
+// Home: the picked sermon (this week's by default) with its clips as a
+// review list or a grid of thumbnails, then the church's other sermons.
 export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, busyClipId }) {
   const [tab, setTab] = useState('all')
   const [query, setQuery] = useState('')
