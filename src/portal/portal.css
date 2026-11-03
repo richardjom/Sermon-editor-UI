@@ -121,8 +121,6 @@
 }
 .pt-btn:disabled { opacity: 0.55; cursor: default; }
 .pt-btn-primary { border-color: transparent; background: var(--pt-accent); color: var(--pt-on-accent); }
-.pt-btn-accent-outline { border-color: var(--pt-accent); color: var(--pt-accent); }
-.pt-btn-ok { border-color: var(--pt-ok-line); background: var(--pt-ok-soft); color: var(--pt-ok); }
 .pt-btn-ghost { border-color: transparent; background: transparent; color: var(--pt-muted); }
 .pt-btn-sm { height: 34px; padding: 0 10px; }
 .pt-btn-lg { height: 50px; font-size: 15px; border-radius: 12px; }
