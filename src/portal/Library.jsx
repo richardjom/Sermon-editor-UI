@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { downloadApiFile, transcriptPdfUrl } from '../api.js'
-import { PIcon, clipStatus, fmtDate, fmtTime, sermonName } from './shared.jsx'
+import { PIcon, captionWithoutTags, clipStatus, fmtDate, fmtTime, sermonName } from './shared.jsx'
 
 // How many other sermons show before "Show all".
 const OTHERS_LIMIT = 5
@@ -181,7 +181,7 @@ function ClipCard({ clip, busy, onOpen, onRequest, onReview }) {
     <article className="pt-card">
       <button type="button" className="pt-tile" onClick={onOpen} aria-label={`Watch clip ${clip.number}: ${clip.title}`}>
         {/* #t= shows a frame from inside the clip instead of a black first frame. */}
-        <video src={`${clip.video_url}#t=0.8`} preload="metadata" muted playsInline tabIndex={-1} />
+        <video src={`${clip.video_url}#t=2`} preload="metadata" muted playsInline tabIndex={-1} />
         <span className="pt-pill">{fmtTime(clip.duration_seconds)}</span>
         <span className="pt-tile-play"><PIcon name="play" size={20} /></span>
         {status !== 'needs' && (
@@ -192,7 +192,10 @@ function ClipCard({ clip, busy, onOpen, onRequest, onReview }) {
         )}
       </button>
       <div className="pt-card-body">
-        <h3>{clip.title}</h3>
+        <div className="pt-card-text">
+          <h3>{clip.title}</h3>
+          {clip.caption && <p className="pt-card-caption">{captionWithoutTags(clip.caption)}</p>}
+        </div>
         {status === 'needs' && (
           <div className="pt-card-actions">
             <button type="button" className="pt-btn pt-btn-primary" disabled={busy} onClick={() => onReview(clip.clip_id, 'approved')}>

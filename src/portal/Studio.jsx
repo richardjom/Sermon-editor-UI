@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { PIcon, STATUS_LABEL, captionWithoutTags, clipStatus, fmtTime, hashtags } from './shared.jsx'
+import { PIcon, STATUS_LABEL, captionWithoutTags, clipStatus, fmtTime, hashtags, sermonName } from './shared.jsx'
 
-// One clip at a time: list on the left, player in the middle, caption +
-// download + review on the right, and where each clip sits in the sermon.
+// One clip at a time: list on the left, the clip on a dark stage in the
+// middle (with where it sits in the sermon), review + caption + download on
+// the right.
 // Instagram's limit; the backend rejects anything longer.
 const MAX_CAPTION = 2200
 
@@ -103,15 +104,16 @@ export function Studio({ sermon, clipId, requestClipId, onSelect, onBack, onRevi
 
   return (
     <div className="pt-studio">
-      <div>
+      <div className="pt-studio-top">
         <button type="button" className="pt-btn pt-btn-ghost" onClick={onBack}>
           <PIcon name="left" /> All clips
         </button>
+        <span className="pt-studio-sermon">{sermonName(sermon)}</span>
       </div>
 
       <div className="pt-studio-cols">
         <section className="pt-panel pt-col-list" aria-label="Clips">
-          <div className="pt-panel-head"><h2>Clips</h2><span className="pt-sub" style={{ margin: 0 }}>{clips.length}</span></div>
+          <div className="pt-panel-head"><h2>Clips</h2><span className="pt-sub pt-num">{clips.length}</span></div>
           <div className="pt-list">
             {clips.map(c => {
               const s = clipStatus(c)
@@ -121,24 +123,22 @@ export function Studio({ sermon, clipId, requestClipId, onSelect, onBack, onRevi
                   aria-current={c.clip_id === clip.clip_id}
                   onClick={() => onSelect(c.clip_id)}
                 >
-                  <span className="pt-row-num">{c.number}</span>
-                  <span className="pt-row-text">
-                    <span className="pt-row-title">{c.title}</span>
-                    <span className="pt-row-sub">Starts {fmtTime(c.start_seconds)} · {fmtTime(c.duration_seconds)}</span>
+                  <span className="pt-row-thumb">
+                    <video src={`${c.video_url}#t=2`} preload="metadata" muted playsInline tabIndex={-1} aria-hidden="true" />
                   </span>
-                  <span className={`pt-dot dot-${s}`} role="img" aria-label={STATUS_LABEL[s]} />
+                  <span className="pt-row-text">
+                    <span className="pt-row-title">{c.number}. {c.title}</span>
+                    <span className="pt-row-sub pt-num">{fmtTime(c.duration_seconds)} long, from {fmtTime(c.start_seconds)}</span>
+                    {s !== 'needs' && <span className={`pt-row-status row-${s}`}>{STATUS_LABEL[s]}</span>}
+                  </span>
                 </button>
               )
             })}
           </div>
-          <div className="pt-legend">
-            <span><span className="pt-dot dot-needs" />Needs review</span>
-            <span><span className="pt-dot dot-approved" />Approved</span>
-            <span><span className="pt-dot dot-changes" />Being updated</span>
-          </div>
         </section>
 
         <section className="pt-col-preview" aria-label="Preview">
+          <video className="pt-stage-backdrop" key={`bg-${clip.clip_id}`} src={`${clip.video_url}#t=2`} preload="metadata" muted playsInline aria-hidden="true" tabIndex={-1} />
           <div className="pt-player">
             <video
               key={clip.clip_id} src={clip.video_url} controls playsInline preload="metadata"
@@ -146,15 +146,39 @@ export function Studio({ sermon, clipId, requestClipId, onSelect, onBack, onRevi
               onLoadedMetadata={e => setLandscape(e.currentTarget.videoWidth > e.currentTarget.videoHeight)}
             />
           </div>
-          <h1 className="pt-clip-title">{clip.title}</h1>
-          <div className="pt-player-nav">
-            <button type="button" className="pt-icon-btn" onClick={() => go(index - 1)} disabled={index === 0} aria-label="Previous clip">
+          <div className="pt-player-bar">
+            <button type="button" className="pt-icon-btn pt-btn-glass" onClick={() => go(index - 1)} disabled={index === 0} aria-label="Previous clip">
               <PIcon name="left" size={18} />
             </button>
-            <span className="pt-label" style={{ color: 'var(--pt-soft)' }}>Clip {index + 1} of {clips.length}</span>
-            <button type="button" className="pt-icon-btn" onClick={() => go(index + 1)} disabled={index === clips.length - 1} aria-label="Next clip">
+            <div className="pt-player-title">
+              <h1 className="pt-clip-title">{clip.title}</h1>
+              <span className="pt-num">Clip {index + 1} of {clips.length}</span>
+            </div>
+            <button type="button" className="pt-icon-btn pt-btn-glass" onClick={() => go(index + 1)} disabled={index === clips.length - 1} aria-label="Next clip">
               <PIcon name="right" size={18} />
             </button>
+          </div>
+          <div className="pt-where" aria-label="Where each clip comes from">
+            <div className="pt-where-head">
+              <span>Where it comes from in the sermon</span>
+              <span className="pt-num">{fmtTime(clip.start_seconds)} of {fmtTime(total)}</span>
+            </div>
+            <div className="pt-timeline">
+              {clips.map(c => (
+                <button
+                  key={c.clip_id} type="button" className="pt-marker"
+                  aria-current={c.clip_id === clip.clip_id}
+                  aria-label={`Clip ${c.number}: ${c.title}`}
+                  title={`${c.number}. ${c.title}`}
+                  onClick={() => onSelect(c.clip_id)}
+                  style={{
+                    left: `${(c.start_seconds / total) * 100}%`,
+                    width: `${Math.max((c.duration_seconds / total) * 100, 1.2)}%`,
+                  }}
+                  data-status={clipStatus(c)}
+                />
+              ))}
+            </div>
           </div>
         </section>
 
@@ -251,39 +275,11 @@ export function Studio({ sermon, clipId, requestClipId, onSelect, onBack, onRevi
             <a className="pt-btn pt-btn-lg" href={clip.download_url} download>
               <PIcon name="download" /> Download this clip
             </a>
-            <p className="pt-sub" style={{ margin: 0 }}>Need another format, or captions changed? Use “Request a change”.</p>
+            <p className="pt-sub">Need another format? Use “Request a change”.</p>
           </section>
         </aside>
       </div>
 
-      <section className="pt-panel" aria-label="Sermon timeline">
-        <div className="pt-panel-head">
-          <h2>Where each clip comes from</h2>
-          <span className="pt-num" style={{ fontSize: 13, color: 'var(--pt-soft)' }}>
-            {fmtTime(clip.start_seconds)} <span style={{ color: 'var(--pt-muted)' }}>/ {fmtTime(total)}</span>
-          </span>
-        </div>
-        <div className="pt-ticks pt-num">
-          {[0, 0.25, 0.5, 0.75, 1].map(f => <span key={f}>{fmtTime(total * f)}</span>)}
-        </div>
-        <div className="pt-timeline">
-          {clips.map(c => (
-            <button
-              key={c.clip_id} type="button" className="pt-marker"
-              aria-current={c.clip_id === clip.clip_id}
-              aria-label={`Clip ${c.number}: ${c.title}`}
-              title={`${c.number}. ${c.title}`}
-              onClick={() => onSelect(c.clip_id)}
-              style={{
-                left: `${(c.start_seconds / total) * 100}%`,
-                width: `${Math.max((c.duration_seconds / total) * 100, 1.2)}%`,
-                background: `var(--pt-${clipStatus(c)})`,
-              }}
-            />
-          ))}
-          <span className="pt-playhead" style={{ left: `${(clip.start_seconds / total) * 100}%` }} />
-        </div>
-      </section>
     </div>
   )
 }
