@@ -3,14 +3,14 @@
    values: add a screen with var(--pt-*) and it works in light and dark. */
 
 .pt-root[data-theme='light'] {
-  --pt-bg: #f6f6fb;
+  --pt-bg: #f4f4f5;
   --pt-surface: #ffffff;
-  --pt-surface-2: #f3f3f8;
-  --pt-line: #e7e7ef;
-  --pt-line-2: #dcdce6;
-  --pt-text: #12131a;
-  --pt-soft: #3e4150;
-  --pt-muted: #5c5f6e;
+  --pt-surface-2: #ececee;
+  --pt-line: #e4e4e7;
+  --pt-line-2: #d4d4d8;
+  --pt-text: #18181b;
+  --pt-soft: #3f3f46;
+  --pt-muted: #63636b;
   --pt-accent: #18181b;
   --pt-on-accent: #ffffff;
   --pt-accent-soft: #ededf0;
@@ -22,10 +22,8 @@
   --pt-on-ok: #ffffff;
   --pt-info: #6d28d9;
   --pt-info-soft: #f3edff;
-  --pt-track: #ececf3;
+  --pt-track: #e4e4e7;
   --pt-needs: #6b6b78;
-  --pt-tab-on: #ffffff;
-  --pt-shadow: 0 1px 2px rgba(18, 19, 26, 0.08);
   color-scheme: light;
 }
 
@@ -51,8 +49,6 @@
   --pt-info-soft: #241a3a;
   --pt-track: #1f1f22;
   --pt-needs: #6a6a74;
-  --pt-tab-on: #2a2a2e;
-  --pt-shadow: none;
   color-scheme: dark;
 }
 
@@ -122,6 +118,8 @@
 .pt-btn:disabled { opacity: 0.55; cursor: default; }
 .pt-btn-primary { border-color: transparent; background: var(--pt-accent); color: var(--pt-on-accent); }
 .pt-btn-ghost { border-color: transparent; background: transparent; color: var(--pt-muted); }
+.pt-btn-quiet { background: transparent; }
+.pt-btn-quiet:hover { background: var(--pt-surface); }
 .pt-btn-sm { height: 34px; padding: 0 10px; }
 .pt-btn-lg { height: 50px; font-size: 15px; border-radius: 12px; }
 .pt-icon-btn {
@@ -131,26 +129,54 @@
 }
 
 /* ── Library (home) ─────────────────────────────────────────────────────── */
-.pt-main { max-width: 1280px; margin: 0 auto; padding: 32px 28px 64px; display: flex; flex-direction: column; gap: 24px; }
-.pt-section { display: flex; flex-direction: column; gap: 16px; }
-.pt-h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+.pt-main { max-width: 1280px; margin: 0 auto; padding: 28px 28px 72px; display: flex; flex-direction: column; gap: 48px; }
+.pt-section { display: flex; flex-direction: column; gap: 18px; }
+.pt-h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
 .pt-sub { margin: 0; font-size: 14px; color: var(--pt-muted); }
 
-/* This week: the sermon on the left, where review stands on the right. */
-.pt-week {
-  display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 24px 40px;
-  padding: 32px; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 20px;
+/* The stage: this week's sermon on its own footage, dark in both themes so
+   the clips read like a premiere, not a form. */
+.pt-stage {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; gap: 48px; min-height: 400px; padding: 52px 56px;
+  border-radius: 28px; background: #000; color: #fff;
 }
-.pt-week-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 380px; }
-.pt-week-eyebrow { margin: 0; font-size: 14px; font-weight: 600; color: var(--pt-soft); }
-.pt-week h1 { margin: 0; font-size: 40px; line-height: 1.08; font-weight: 800; letter-spacing: -0.03em; text-wrap: balance; }
-.pt-week-review { display: flex; flex-direction: column; gap: 12px; flex: 0 1 400px; min-width: 280px; }
-.pt-week-count { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--pt-muted); }
-.pt-week-count strong { color: var(--pt-text); font-weight: 700; }
-.pt-progress-track { height: 8px; border-radius: 999px; background: var(--pt-track); overflow: hidden; }
-.pt-progress-track > div { height: 100%; border-radius: 999px; background: var(--pt-approved); }
-.pt-week-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.pt-week-actions > .pt-btn { flex: 1 1 160px; }
+.pt-root[data-theme='dark'] .pt-stage { box-shadow: inset 0 0 0 1px var(--pt-line); }
+.pt-stage-backdrop {
+  position: absolute; z-index: -2; inset: -80px; width: calc(100% + 160px); height: calc(100% + 160px);
+  object-fit: cover; filter: blur(64px) saturate(1.4); opacity: 0.6; pointer-events: none;
+}
+.pt-stage::before {
+  content: ''; position: absolute; z-index: -1; inset: 0;
+  background: linear-gradient(100deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.6) 55%, rgba(0, 0, 0, 0.2) 100%);
+}
+.pt-stage-body { flex: 1 1 auto; min-width: 0; max-width: 580px; display: flex; flex-direction: column; justify-content: space-between; gap: 44px; }
+.pt-stage-eyebrow { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: rgba(255, 255, 255, 0.72); }
+.pt-stage h1 { margin: 0; font-size: 64px; line-height: 1; font-weight: 800; letter-spacing: -0.045em; text-wrap: balance; }
+.pt-stage-meta { margin: 16px 0 0; font-size: 15px; color: rgba(255, 255, 255, 0.72); }
+.pt-stage-review { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
+.pt-stage-count { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: rgba(255, 255, 255, 0.72); }
+.pt-stage-count strong { color: #fff; font-weight: 700; }
+.pt-progress-track { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+.pt-progress-track > div { height: 100%; border-radius: 999px; background: var(--pt-approved); transition: width 0.4s ease; }
+.pt-stage-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.pt-stage-actions > .pt-btn { flex: 1 1 190px; }
+.pt-stage :focus-visible { outline-color: #fff; }
+.pt-btn-light { border-color: transparent; background: #fff; color: #000; }
+.pt-btn-light:hover { background: #e9e9eb; }
+.pt-btn-glass { border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.08); color: #fff; backdrop-filter: blur(8px); }
+.pt-btn-glass:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* Three of the week's clips, fanned like a set of prints. */
+.pt-stage-fan { position: relative; flex: 0 0 380px; align-self: center; height: 310px; }
+.pt-stage-fan video {
+  position: absolute; top: 50%; left: 50%; width: 172px; aspect-ratio: 9 / 16; object-fit: cover;
+  border-radius: 16px; background: #111; border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5); pointer-events: none;
+}
+.pt-stage-fan video:nth-child(1) { z-index: 3; transform: translate(-50%, -50%); }
+.pt-stage-fan video:nth-child(2) { z-index: 2; transform: translate(-50%, -50%) translateX(-108px) rotate(-8deg) scale(0.86); filter: brightness(0.75); }
+.pt-stage-fan video:nth-child(3) { z-index: 1; transform: translate(-50%, -50%) translateX(108px) rotate(8deg) scale(0.86); filter: brightness(0.75); }
 
 /* Other sermons */
 .pt-sermon-list { display: flex; flex-direction: column; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 16px; overflow: hidden; }
@@ -166,28 +192,35 @@
 
 .pt-section-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; }
 
-/* Clip cards: watch on top, the review action right underneath. */
-.pt-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 20px; }
-.pt-card { display: flex; flex-direction: column; gap: 12px; padding: 10px; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 18px; }
-.pt-tile { position: relative; display: block; width: 100%; aspect-ratio: 3 / 4; padding: 0; border: 0; border-radius: 12px; background: #121318; cursor: pointer; overflow: hidden; }
-.pt-tile video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
-.pt-pill { position: absolute; top: 10px; left: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 11px; font-weight: 700; }
+/* Clip cards: the picture is the card; the review action sits underneath. */
+.pt-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 36px 22px; }
+.pt-card { display: flex; flex-direction: column; gap: 14px; }
+.pt-tile {
+  position: relative; display: block; width: 100%; aspect-ratio: 3 / 4; padding: 0; border: 0; border-radius: 18px;
+  background: #121318; cursor: pointer; overflow: hidden; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 28px -16px rgba(0, 0, 0, 0.35);
+}
+.pt-tile video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; transition: transform 0.4s ease; }
+.pt-tile:hover video { transform: scale(1.03); }
+.pt-pill { position: absolute; top: 12px; left: 12px; padding: 3px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 11px; font-weight: 700; }
 .pt-tile-play {
   position: absolute; top: 50%; left: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92); color: #12131a; display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.92); color: #000; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.2s;
 }
-.pt-tile:hover .pt-tile-play { background: #ffffff; }
-.pt-card-body { display: flex; flex-direction: column; gap: 8px; padding: 0 4px 4px; flex: 1; }
-.pt-status { align-self: flex-start; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-.status-needs { background: var(--pt-surface-2); color: var(--pt-soft); }
-.status-approved { background: var(--pt-ok-soft); color: var(--pt-ok); }
-.status-changes { background: var(--pt-info-soft); color: var(--pt-info); }
-.pt-card h3 { margin: 0; font-size: 15px; line-height: 1.3; font-weight: 700; }
-.pt-card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
-.pt-card-actions > .pt-btn { flex: 1; height: 42px; }
+.pt-tile:hover .pt-tile-play, .pt-tile:focus-visible .pt-tile-play { opacity: 1; }
+@media (hover: none) { .pt-tile-play { opacity: 1; } }
+.pt-tile-status {
+  position: absolute; top: 12px; right: 12px; display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 999px; color: #fff; font-size: 12px; font-weight: 700;
+}
+.status-approved { background: #15803d; }
+.status-changes { background: #6d28d9; }
+.pt-card-body { display: flex; flex-direction: column; gap: 12px; padding: 0 2px; flex: 1; }
+.pt-card h3 { margin: 0; font-size: 16px; line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; }
+.pt-card-actions { display: flex; gap: 8px; margin-top: auto; }
+.pt-card-actions > .pt-btn { flex: 1; }
 .pt-card-actions > .pt-btn-undo { flex: none; }
-.pt-btn-approve { border-color: transparent; background: var(--pt-ok); color: var(--pt-on-ok); }
-.pt-card-note { margin: auto 0 0; padding: 12px; border-radius: 12px; background: var(--pt-surface-2); color: var(--pt-soft); font-size: 13px; line-height: 1.45; }
+.pt-card-note { margin: auto 0 0; font-size: 13px; line-height: 1.45; color: var(--pt-muted); }
 
 /* The rest of the package */
 .pt-extras { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
@@ -267,10 +300,10 @@
 /* Phones / narrow windows: one column, the clip first. */
 @media (max-width: 960px) {
   .pt-header { padding: 12px 16px; }
-  .pt-main { padding: 20px 16px 48px; }
-  .pt-week { padding: 24px; }
-  .pt-week h1 { font-size: 32px; }
-  .pt-week-review { flex: 1 1 100%; }
+  .pt-main { padding: 20px 16px 48px; gap: 40px; }
+  .pt-stage { min-height: 0; padding: 36px 32px; }
+  .pt-stage h1 { font-size: 44px; }
+  .pt-stage-fan { display: none; }
   .pt-studio-cols { flex-direction: column; align-items: stretch; }
   .pt-col-list, .pt-col-preview, .pt-col-side { flex: none; width: 100%; }
   .pt-col-preview { order: 1; }
@@ -279,11 +312,13 @@
   .pt-player video { height: min(62vh, 560px); }
 }
 @media (max-width: 560px) {
-  .pt-week { padding: 20px; border-radius: 16px; }
-  .pt-week h1 { font-size: 28px; }
-  .pt-week-review { min-width: 0; }
-  .pt-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .pt-card { padding: 8px; gap: 10px; border-radius: 14px; }
+  .pt-stage { padding: 28px 20px 20px; border-radius: 22px; }
+  .pt-stage h1 { font-size: 34px; }
+  .pt-stage-body { gap: 28px; }
+  .pt-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 12px; }
+  .pt-card { gap: 10px; }
+  .pt-tile { border-radius: 14px; }
+  .pt-tile-status { top: auto; right: auto; bottom: 10px; left: 10px; }
   .pt-card h3 { font-size: 14px; }
   .pt-card-actions { flex-direction: column; }
   .pt-card-actions > .pt-btn { flex: none; height: 40px; }
