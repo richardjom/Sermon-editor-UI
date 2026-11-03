@@ -5,8 +5,8 @@ import { PIcon, clipStatus, fmtDate, fmtTime, sermonName } from './shared.jsx'
 // How many other sermons show before "Show all".
 const OTHERS_LIMIT = 5
 
+// Shown on the picture once the church has decided; undecided clips stay clean.
 const BADGE = {
-  needs: 'Needs your review',
   approved: 'Approved',
   changes: 'Being updated',
 }
@@ -68,37 +68,50 @@ export function Library({ sermons, sermon, onPickSermon, onOpenClip, onReview, b
 
   return (
     <main className="pt-main">
-      <section className="pt-week" aria-labelledby="pt-sermon-title">
-        <div className="pt-week-text">
-          {eyebrow && <p className="pt-week-eyebrow">{eyebrow}</p>}
-          <h1 id="pt-sermon-title">{name}</h1>
-          <p className="pt-sub">{meta}</p>
+      <section className="pt-stage" aria-labelledby="pt-sermon-title">
+        {/* The sermon's own footage, blurred, is the backdrop. */}
+        {clips[0] && (
+          <video className="pt-stage-backdrop" src={`${clips[0].video_url}#t=2`} preload="metadata" muted playsInline aria-hidden="true" tabIndex={-1} />
+        )}
+        <div className="pt-stage-body">
+          <div className="pt-stage-text">
+            {eyebrow && <p className="pt-stage-eyebrow">{eyebrow}</p>}
+            <h1 id="pt-sermon-title">{name}</h1>
+            <p className="pt-stage-meta">{meta}</p>
+          </div>
+          {clips.length > 0 && (
+            <div className="pt-stage-review">
+              <div className="pt-stage-count">
+                <strong className="pt-num">{counts.approved} of {counts.all} approved</strong>
+                <span>{counts.needs ? `${counts.needs} need${counts.needs === 1 ? 's' : ''} your review` : 'All set'}</span>
+              </div>
+              <div className="pt-progress-track" aria-hidden="true">
+                <div style={{ width: `${(counts.approved / counts.all) * 100}%` }} />
+              </div>
+              <div className="pt-stage-actions">
+                {firstToReview ? (
+                  <>
+                    <button type="button" className="pt-btn pt-btn-lg pt-btn-light" onClick={approveAll} disabled={approvingAll}>
+                      <PIcon name="check" strokeWidth={2.5} /> {approvingAll ? 'Approving…' : 'Approve all remaining'}
+                    </button>
+                    <button type="button" className="pt-btn pt-btn-lg pt-btn-glass" onClick={() => onOpenClip(firstToReview.clip_id)}>
+                      <PIcon name="play" size={12} /> Review one by one
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="pt-btn pt-btn-lg pt-btn-glass" onClick={() => onOpenClip(clips[0].clip_id)}>
+                    <PIcon name="play" size={12} /> Watch clips
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         {clips.length > 0 && (
-          <div className="pt-week-review">
-            <div className="pt-week-count">
-              <strong className="pt-num">{counts.approved} of {counts.all} approved</strong>
-              <span>{counts.needs ? `${counts.needs} need${counts.needs === 1 ? 's' : ''} your review` : 'All set'}</span>
-            </div>
-            <div className="pt-progress-track" aria-hidden="true">
-              <div style={{ width: `${(counts.approved / counts.all) * 100}%` }} />
-            </div>
-            <div className="pt-week-actions">
-              {firstToReview ? (
-                <>
-                  <button type="button" className="pt-btn pt-btn-primary pt-btn-lg" onClick={approveAll} disabled={approvingAll}>
-                    <PIcon name="check" strokeWidth={2.5} /> {approvingAll ? 'Approving…' : 'Approve all remaining'}
-                  </button>
-                  <button type="button" className="pt-btn pt-btn-lg" onClick={() => onOpenClip(firstToReview.clip_id)}>
-                    <PIcon name="play" size={12} /> Review one by one
-                  </button>
-                </>
-              ) : (
-                <button type="button" className="pt-btn pt-btn-lg" onClick={() => onOpenClip(clips[0].clip_id)}>
-                  <PIcon name="play" size={12} /> Watch clips
-                </button>
-              )}
-            </div>
+          <div className="pt-stage-fan" aria-hidden="true">
+            {clips.slice(0, 3).map(c => (
+              <video key={c.clip_id} src={`${c.video_url}#t=2`} preload="metadata" muted playsInline tabIndex={-1} />
+            ))}
           </div>
         )}
       </section>
@@ -171,16 +184,21 @@ function ClipCard({ clip, busy, onOpen, onRequest, onReview }) {
         <video src={`${clip.video_url}#t=0.8`} preload="metadata" muted playsInline tabIndex={-1} />
         <span className="pt-pill">{fmtTime(clip.duration_seconds)}</span>
         <span className="pt-tile-play"><PIcon name="play" size={20} /></span>
+        {status !== 'needs' && (
+          <span className={`pt-tile-status status-${status}`}>
+            {status === 'approved' && <PIcon name="check" size={12} strokeWidth={3} />}
+            {BADGE[status]}
+          </span>
+        )}
       </button>
       <div className="pt-card-body">
-        <span className={`pt-status status-${status}`}>{BADGE[status]}</span>
         <h3>{clip.title}</h3>
         {status === 'needs' && (
           <div className="pt-card-actions">
-            <button type="button" className="pt-btn pt-btn-approve" disabled={busy} onClick={() => onReview(clip.clip_id, 'approved')}>
+            <button type="button" className="pt-btn pt-btn-primary" disabled={busy} onClick={() => onReview(clip.clip_id, 'approved')}>
               <PIcon name="check" strokeWidth={2.5} /> Approve
             </button>
-            <button type="button" className="pt-btn" onClick={onRequest}>Request change</button>
+            <button type="button" className="pt-btn pt-btn-quiet" onClick={onRequest}>Request change</button>
           </div>
         )}
         {status === 'approved' && (
@@ -194,7 +212,7 @@ function ClipCard({ clip, busy, onOpen, onRequest, onReview }) {
           </div>
         )}
         {status === 'changes' && (
-          <p className="pt-card-note">We’re updating this clip. The new version will show up here when it’s ready.</p>
+          <p className="pt-card-note">We’re updating this clip. The new version will show up here.</p>
         )}
       </div>
     </article>
