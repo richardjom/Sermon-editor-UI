@@ -20,10 +20,8 @@ function pdfBaseName(title) {
  * sort, accordion). The right rail is where features grow; the left rarely
  * changes.
  *
- * The visual treatment uses a warm editorial palette + Fraunces serif for
- * headlines + Geist Mono for timecodes + Inter for chrome. The rest of the
- * app keeps its existing palette for now — this page is intentionally
- * scoped.
+ * Colors come from the shared theme variables (light / dark); type is Plus
+ * Jakarta Sans with Geist Mono for timecodes.
  *
  * Mapping our API to the prototype shape:
  *   sermon.title             → title in top bar
