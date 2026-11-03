@@ -24,6 +24,9 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     getPortalSermons(previewClientId)
       .then(d => {
         if (cancelled) return
+        // Newest first, so the home screen opens on this week's sermon.
+        const when = x => x.service_datetime || x.sermon_date || ''
+        d = { ...d, sermons: [...d.sermons].sort((a, b) => when(b).localeCompare(when(a))) }
         setList(d)
         // Staff previews also list undelivered sermons; open on what the church sees.
         setSermonId((d.sermons.find(x => x.delivered) || d.sermons[0])?.sermon_id || null)
@@ -43,9 +46,25 @@ export function Portal({ previewClientId, onExitPreview, account }) {
     return () => { cancelled = true }
   }, [sermonId])
 
+  // Keep the open sermon's counts in the sermon list current as clips are
+  // reviewed, so "Earlier sermons" is right after switching away.
+  useEffect(() => {
+    if (!sermon) return
+    const st = sermon.clips.map(c => c.review?.status)
+    setList(l => l && {
+      ...l,
+      sermons: l.sermons.map(x => (x.sermon_id !== sermon.sermon_id ? x : {
+        ...x,
+        clip_count: st.length,
+        approved_count: st.filter(v => v === 'approved').length,
+        changes_count: st.filter(v => v === 'changes').length,
+      })),
+    })
+  }, [sermon])
+
   // Opening a clip (or going back) starts at the top of the page.
   const view = clipId ? 'studio' : 'library'
-  useEffect(() => { window.scrollTo(0, 0) }, [view])
+  useEffect(() => { window.scrollTo(0, 0) }, [view, sermonId])
 
   // Saves a decision and updates the clip in place. Throws so the caller
   // can show the error next to the button that was pressed.

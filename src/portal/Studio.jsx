@@ -197,11 +197,11 @@ export function Studio({ sermon, clipId, onSelect, onBack, onReview, busy }) {
       <section className="pt-panel" aria-label="Sermon timeline">
         <div className="pt-panel-head">
           <h2>Where each clip comes from</h2>
-          <span className="pt-mono" style={{ fontSize: 13, color: 'var(--pt-soft)' }}>
+          <span className="pt-num" style={{ fontSize: 13, color: 'var(--pt-soft)' }}>
             {fmtTime(clip.start_seconds)} <span style={{ color: 'var(--pt-muted)' }}>/ {fmtTime(total)}</span>
           </span>
         </div>
-        <div className="pt-ticks pt-mono">
+        <div className="pt-ticks pt-num">
           {[0, 0.25, 0.5, 0.75, 1].map(f => <span key={f}>{fmtTime(total * f)}</span>)}
         </div>
         <div className="pt-timeline">
