@@ -24,17 +24,42 @@ export function fmtTime(sec) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${r}` : `${m}:${r}`
 }
 
-export function fmtDate(sermon) {
+// Many sermons are titled with their Sunday ("10/4/26"). That is the real
+// preaching date (sermon_date is often the upload day), so it wins.
+function dateFromTitle(title) {
+  const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\s*$/.exec(title || '')
+  if (!m) return null
+  const d = new Date(+m[3] < 100 ? 2000 + +m[3] : +m[3], +m[1] - 1, +m[2])
+  return isNaN(d) ? null : d
+}
+
+export function sermonDate(sermon) {
+  const fromTitle = dateFromTitle(sermon?.title)
+  if (fromTitle) return fromTitle
   // sermon_date is when it was preached; service_datetime is the church's
   // deadline for the clips, so it's only a fallback.
   const raw = sermon?.sermon_date || sermon?.service_datetime
-  if (!raw) return ''
+  if (!raw) return null
   // A bare YYYY-MM-DD would parse as UTC midnight and show the previous
   // day in US time zones, so read it as a local date.
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(raw))
   const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(raw)
-  if (isNaN(d)) return String(raw)
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+  return isNaN(d) ? null : d
+}
+
+export function fmtDate(sermon, long = false) {
+  const d = sermonDate(sermon)
+  if (!d) return ''
+  return d.toLocaleDateString(undefined, long
+    ? { weekday: 'long', month: 'long', day: 'numeric' }
+    : { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// What to call a sermon: its title, or its Sunday written out when the
+// title is only a date.
+export function sermonName(sermon) {
+  if (dateFromTitle(sermon?.title)) return fmtDate(sermon, true)
+  return sermon?.title || 'Untitled sermon'
 }
 
 // Hashtags written into the caption, shown as chips / a tag line.
@@ -59,6 +84,8 @@ const paths = {
   clips: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M10 9.5v5l4-2.5z" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   edit: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M14 6l4 4" /></>,
+  grid: <><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>,
+  list: <><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></>,
   doc: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h6" /></>,
   copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></>,
 }
